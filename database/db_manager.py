@@ -296,6 +296,20 @@ class DatabaseManager:
                 conn.rollback()
                 return None  # 사용자명 중복
     
+    def update_last_activity(self, user_id: int) -> bool:
+        """사용자 활동 시간 갱신 (접속 유지 확인용)"""
+        try:
+            with self._get_connection() as conn:
+                cursor = self._get_cursor(conn)
+                p = self._param()
+                cursor.execute(f"""
+                    UPDATE users SET last_login = {p} WHERE id = {p}
+                """, (datetime.now().isoformat(), user_id))
+                conn.commit()
+                return True
+        except Exception:
+            return False
+    
     def authenticate_user(self, username: str, password: str) -> Optional[Dict]:
         """사용자 인증"""
         with self._get_connection() as conn:
@@ -723,6 +737,45 @@ class DatabaseManager:
                     settings[row[0]] = json.loads(row[1])
             
             return settings
+    
+    def get_recently_active_users(self, minutes: int = 30) -> List[Dict]:
+        """최근 활동한 사용자 목록 조회 (last_login 기준)"""
+        with self._get_connection() as conn:
+            cursor = self._get_cursor(conn)
+            
+            if self.use_postgres:
+                cursor.execute("""
+                    SELECT username, last_login
+                    FROM users
+                    WHERE last_login IS NOT NULL 
+                    AND last_login > NOW() - INTERVAL '%s minutes'
+                    ORDER BY last_login DESC
+                """, (minutes,))
+            else:
+                cursor.execute("""
+                    SELECT username, last_login
+                    FROM users
+                    WHERE last_login IS NOT NULL 
+                    AND datetime(last_login) > datetime('now', ? || ' minutes')
+                    ORDER BY last_login DESC
+                """, (f'-{minutes}',))
+            
+            users = []
+            for row in cursor.fetchall():
+                if isinstance(row, dict):
+                    users.append({"username": row['username'], "last_login": row['last_login']})
+                else:
+                    users.append({"username": row[0], "last_login": row[1]})
+            
+            return users
+    
+    def get_all_users_count(self) -> int:
+        """전체 사용자 수 조회"""
+        with self._get_connection() as conn:
+            cursor = self._get_cursor(conn)
+            cursor.execute("SELECT COUNT(*) FROM users")
+            row = cursor.fetchone()
+            return row[0] if isinstance(row, tuple) else row['count']
 
 
 # 전역 인스턴스

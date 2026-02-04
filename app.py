@@ -275,6 +275,15 @@ def main():
     if not check_app_password():
         return  # 비밀번호 틀리면 여기서 중단
     
+    # 로그인된 사용자 활동 시간 갱신 (5분마다)
+    if st.session_state.authenticated and st.session_state.user:
+        last_activity_update = st.session_state.get('last_activity_update', 0)
+        import time
+        current_time = time.time()
+        if current_time - last_activity_update > 300:  # 5분(300초) 경과 시
+            db.update_last_activity(st.session_state.user['id'])
+            st.session_state.last_activity_update = current_time
+    
     # 헤더
     st.title("📊 주식 분석 대시보드 v2")
     st.markdown("*VIX, 10Y 금리, S&P F-P/E, 공포탐욕 지수 | 경제 사이클 | AI 분석 | 추천 포트폴리오*")
@@ -378,6 +387,29 @@ def main():
                 st.rerun()
         else:
             st.info("🔐 로그인하면 포트폴리오 저장 가능")
+        
+        st.divider()
+        
+        # 현재 접속 중인 사용자 표시
+        st.subheader("👥 현재 접속자")
+        try:
+            active_users = db.get_recently_active_users(minutes=30)
+            if active_users:
+                user_list = [u['username'] for u in active_users]
+                # 현재 로그인한 사용자는 강조
+                current_user = st.session_state.user['username'] if st.session_state.authenticated else None
+                
+                for username in user_list:
+                    if username == current_user:
+                        st.markdown(f"🟢 **{username}** (나)")
+                    else:
+                        st.markdown(f"🟢 {username}")
+                
+                st.caption(f"최근 30분 내 활동: {len(active_users)}명")
+            else:
+                st.caption("현재 접속자 없음")
+        except Exception as e:
+            st.caption(f"접속자 정보 로드 실패")
         
         st.divider()
         
@@ -1323,13 +1355,35 @@ def show_stock_analysis_page():
                 
                 # AI 심층 분석 버튼
                 st.divider()
-                if st.button(f"🤖 AI로 {ticker.upper()} 심층 분석"):
-                    with st.spinner("AI 분석 중..."):
+                
+                # 활성화된 AI 모델 확인
+                active_models = get_active_models()
+                has_ai = len(active_models['github']) > 0 or len(active_models['native']) > 0
+                
+                if not has_ai:
+                    st.warning("⚠️ AI 분석을 사용하려면 사이드바에서 최소 1개의 AI 모델을 활성화하세요.")
+                
+                if st.button(f"🤖 AI로 {ticker.upper()} 심층 분석", disabled=not has_ai, key=f"ai_analyze_{ticker}"):
+                    with st.spinner("AI 분석 중... (최대 30초 소요)"):
                         try:
+                            # GitHub Token 확인
+                            github_token = os.environ.get("GITHUB_TOKEN", "")
+                            if not github_token and 'github' in str(active_models['github']):
+                                st.warning("⚠️ GITHUB_TOKEN이 설정되지 않았습니다. Secrets 설정을 확인하세요.")
+                            
                             ai_analysis = st.session_state.analyzer.get_ai_stock_analysis(ticker.upper())
-                            st.markdown(ai_analysis)
+                            
+                            if ai_analysis and not ai_analysis.startswith("AI 클라이언트가"):
+                                st.success("✅ AI 분석 완료!")
+                                st.markdown(ai_analysis)
+                            else:
+                                st.error(f"AI 분석 실패: {ai_analysis}")
+                                st.info("💡 해결 방법: 사이드바에서 다른 AI 모델을 활성화하거나, Secrets에 API 키를 추가하세요.")
                         except Exception as e:
                             st.error(f"AI 분석 실패: {e}")
+                            import traceback
+                            with st.expander("🔍 상세 에러 정보"):
+                                st.code(traceback.format_exc())
                 
             except Exception as e:
                 st.error(f"분석 실패: {e}")
@@ -2852,9 +2906,19 @@ def show_team_debate_page():
     
     st.table(summary_data)
     
-    # 토론 시작 버튼
-    if st.button("🚀 팀 토론 시작!", type="primary", use_container_width=True):
-        run_team_debate_v2(teams, qa_model, max_revisions, analysis_task)
+    # 토론 시작/중단 버튼
+    col_start, col_stop = st.columns([3, 1])
+    with col_start:
+        if st.button("🚀 팀 토론 시작!", type="primary", use_container_width=True):
+            st.session_state.team_debate_running = True
+            st.session_state.team_debate_stop_requested = False
+            run_team_debate_v2(teams, qa_model, max_revisions, analysis_task)
+    
+    with col_stop:
+        if st.button("🛑 강제 중단", type="secondary", use_container_width=True, 
+                     disabled=not st.session_state.get('team_debate_running', False)):
+            st.session_state.team_debate_stop_requested = True
+            st.warning("⚠️ 중단 요청됨. 현재 단계 완료 후 중단됩니다...")
 
 
 def run_team_debate_v2(teams, qa_model: str, max_revisions: int, analysis_task: str):
@@ -2862,42 +2926,56 @@ def run_team_debate_v2(teams, qa_model: str, max_revisions: int, analysis_task: 
     
     from ai_providers.team_debate import AITeamDebateSystem
     
-    # 시장 데이터 로드
-    market_data = get_market_data()
-    economic_cycle = get_economic_cycle()
+    # 중단 체크 헬퍼 함수
+    def check_stop_requested():
+        return st.session_state.get('team_debate_stop_requested', False)
     
-    combined_data = {
-        "market": market_data,
-        "economic_cycle": economic_cycle,
-        "timestamp": datetime.now().isoformat()
-    }
-    
-    # 토론 시스템 초기화
-    st.info("🔄 AI 클라이언트 초기화 중...")
-    debate_system = AITeamDebateSystem(teams, qa_model)
-    
-    # 참가 불가 팀 표시
-    if debate_system.unavailable_info:
-        st.warning("⚠️ 일부 팀 참가 불가:\n" + "\n".join(debate_system.unavailable_info))
-    
-    # Phase 진행률 표시
-    st.markdown("### 📋 토론 진행 상황")
-    phases = ["Phase 1: 팀 내부 작업", "Phase 2: 팀별 발표", "Phase 3: 팀간 토론", "Phase 4: QA 평가"]
-    phase_cols = st.columns(4)
-    phase_placeholders = {}
-    for i, (col, phase) in enumerate(zip(phase_cols, phases)):
-        with col:
-            phase_placeholders[i+1] = st.empty()
-            phase_placeholders[i+1].markdown(f"⬜ {phase}")
-    
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    st.divider()
-    
-    # 팀별 작업 컨테이너 (Phase 1용)
-    st.markdown("## 📋 Phase 1: 팀 내부 작업")
-    team_work_containers = {}
+    try:
+        # 시장 데이터 로드
+        market_data = get_market_data()
+        economic_cycle = get_economic_cycle()
+        
+        combined_data = {
+            "market": market_data,
+            "economic_cycle": economic_cycle,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # 토론 시스템 초기화
+        st.info("🔄 AI 클라이언트 초기화 중...")
+        debate_system = AITeamDebateSystem(teams, qa_model)
+        
+        # 참가 불가 팀 표시
+        if debate_system.unavailable_info:
+            st.warning("⚠️ 일부 팀 참가 불가:\n" + "\n".join(debate_system.unavailable_info))
+        
+        # 강제 중단 버튼 (실시간)
+        stop_placeholder = st.empty()
+        
+        # Phase 진행률 표시
+        st.markdown("### 📋 토론 진행 상황")
+        phases = ["Phase 1: 팀 내부 작업", "Phase 2: 팀별 발표", "Phase 3: 팀간 토론", "Phase 4: QA 평가"]
+        phase_cols = st.columns(4)
+        phase_placeholders = {}
+        for i, (col, phase) in enumerate(zip(phase_cols, phases)):
+            with col:
+                phase_placeholders[i+1] = st.empty()
+                phase_placeholders[i+1].markdown(f"⬜ {phase}")
+        
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        # 실시간 중단 버튼 표시
+        with stop_placeholder.container():
+            if st.button("🛑 토론 강제 중단", key="stop_during_debate", type="secondary"):
+                st.session_state.team_debate_stop_requested = True
+                st.warning("⚠️ 중단 요청됨...")
+        
+        st.divider()
+        
+        # 팀별 작업 컨테이너 (Phase 1용)
+        st.markdown("## 📋 Phase 1: 팀 내부 작업")
+        team_work_containers = {}
     for team in debate_system.available_teams:
         team_work_containers[team.name] = st.expander(f"🔍 {team.name}", expanded=True)
         with team_work_containers[team.name]:
@@ -2924,6 +3002,19 @@ def run_team_debate_v2(teams, qa_model: str, max_revisions: int, analysis_task: 
     results = {}  # 최종 결과 저장
     
     for update in debate_system.run_team_debate(combined_data, analysis_task, max_revisions):
+        # 중단 요청 체크
+        if check_stop_requested():
+            st.warning("🛑 **토론이 강제 중단되었습니다.**")
+            status_text.text("🛑 중단됨")
+            progress_bar.progress(1.0)
+            st.session_state.team_debate_running = False
+            
+            # 현재까지 결과 표시
+            st.markdown("---")
+            st.markdown("### ⚠️ 중단 시점까지의 결과")
+            st.info(f"중단된 Phase: {current_phase}")
+            return
+        
         stage = update.get("stage", "")
         message = update.get("message", "")
         content = update.get("content", "")
@@ -2932,6 +3023,7 @@ def run_team_debate_v2(teams, qa_model: str, max_revisions: int, analysis_task: 
         # 에러 처리
         if stage == "error":
             st.error(message)
+            st.session_state.team_debate_running = False
             return
         
         # Phase 시작/완료 처리
@@ -3098,6 +3190,11 @@ def run_team_debate_v2(teams, qa_model: str, max_revisions: int, analysis_task: 
             # QA 평가 결과
             st.markdown("### 🏛️ QA 최종 평가")
             st.markdown(update.get("qa_evaluation", "N/A"))
+    
+    finally:
+        # 토론 상태 초기화
+        st.session_state.team_debate_running = False
+        st.session_state.team_debate_stop_requested = False
 
 
 # =====================================================
@@ -3837,8 +3934,20 @@ def _show_team_debate_settings():
     
     st.divider()
     
-    # 토론 시작 버튼
-    if st.button("🚀 팀 토론 시작", type="primary", use_container_width=True, key="unified_start_debate"):
+    # 토론 시작/중단 버튼
+    col_start, col_stop = st.columns([3, 1])
+    with col_start:
+        start_debate = st.button("🚀 팀 토론 시작", type="primary", use_container_width=True, key="unified_start_debate")
+    with col_stop:
+        if st.button("🛑 강제 중단", type="secondary", use_container_width=True, key="unified_stop_debate",
+                     disabled=not st.session_state.get('unified_debate_running', False)):
+            st.session_state.unified_debate_stop_requested = True
+            st.warning("⚠️ 중단 요청됨...")
+    
+    if start_debate:
+        st.session_state.unified_debate_running = True
+        st.session_state.unified_debate_stop_requested = False
+        
         # 시장 데이터 수집
         market_data_dict = {}
         
@@ -3878,6 +3987,12 @@ def _show_team_debate_settings():
             progress_bar = st.progress(0)
             status_text = st.empty()
             
+            # 실시간 중단 버튼
+            stop_placeholder = st.empty()
+            with stop_placeholder.container():
+                if st.button("🛑 토론 강제 중단", key="unified_stop_during", type="secondary"):
+                    st.session_state.unified_debate_stop_requested = True
+            
             # Phase별 결과 표시 영역
             st.divider()
             phase_results_container = st.container()
@@ -3888,6 +4003,16 @@ def _show_team_debate_settings():
             phase_results = {}  # {phase_num: result_data}
             
             for update in debate_system.run_team_debate(market_data_dict, task=topic):
+                # 중단 요청 체크
+                if st.session_state.get('unified_debate_stop_requested', False):
+                    st.warning("🛑 **토론이 강제 중단되었습니다.**")
+                    status_text.text("🛑 중단됨")
+                    progress_bar.progress(1.0)
+                    st.session_state.unified_debate_running = False
+                    st.session_state.unified_debate_stop_requested = False
+                    st.info(f"중단된 Phase: {current_phase}")
+                    break
+                
                 stage = update.get("stage", "")
                 team = update.get("team", "")
                 content = update.get("content", "")
@@ -3916,16 +4041,23 @@ def _show_team_debate_settings():
                     final_result = update
                     progress_bar.progress(1.0)
             
-            st.success("🎉 토론이 완료되었습니다!")
+            # 토론 상태 초기화
+            st.session_state.unified_debate_running = False
+            st.session_state.unified_debate_stop_requested = False
             
-            # ========== 최종 결과 시각화 ==========
             if final_result:
+                st.success("🎉 토론이 완료되었습니다!")
+                # ========== 최종 결과 시각화 ==========
                 _display_final_results(final_result, teams)
             
         except Exception as e:
             st.error(f"토론 실행 오류: {e}")
             import traceback
             st.code(traceback.format_exc())
+        finally:
+            # 상태 정리
+            st.session_state.unified_debate_running = False
+            st.session_state.unified_debate_stop_requested = False
 
 
 # ==================== 로그인/회원가입 페이지 ====================
