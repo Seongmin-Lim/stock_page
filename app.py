@@ -937,8 +937,7 @@ def main():
             "🔍 개별 주식 분석",
             "💼 포트폴리오",
             "🏭 섹터별 대표 종목",
-            "📰 뉴스", 
-            "🤖 AI 분석",
+            "📰 뉴스",
             "🎬 AI 토론"
         ]
         
@@ -972,8 +971,6 @@ def main():
         show_sector_representatives_page()
     elif page == "📰 뉴스":
         show_news_page()
-    elif page == "🤖 AI 분석":
-        show_ai_analysis_page()
     elif page == "🎬 AI 토론":
         show_unified_debate_page()
     elif page == "🔐 로그인/회원가입":
@@ -3147,104 +3144,6 @@ def show_news_page():
             st.write(f"- **{api}**: {status}")
         
         st.caption("💡 Alpha Vantage는 분당 5회 요청 제한이 있습니다.")
-
-
-def show_ai_analysis_page():
-    """AI 분석 페이지 (분야별 다른 AI 지원)"""
-    
-    st.header("🤖 AI 분석")
-    st.markdown("*분석 분야별로 다른 AI를 선택할 수 있습니다*")
-    
-    # AI 제공자별 설정
-    st.markdown("### ⚙️ 분석별 AI 설정")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    ai_options = ["grok", "gemini", "openai", "anthropic", "github"]
-    
-    with col1:
-        market_ai = st.selectbox("시장 분석 AI", ai_options, index=0, key="market_ai_select")
-    
-    with col2:
-        stock_ai = st.selectbox("주식 분석 AI", ai_options, index=0, key="stock_ai_select")
-    
-    with col3:
-        portfolio_ai = st.selectbox("포트폴리오 AI", ai_options, index=0, key="portfolio_ai_select")
-    
-    st.divider()
-    
-    tab1, tab2, tab3 = st.tabs(["📊 시장 분석", "📈 주식 분석", "💼 포트폴리오"])
-    
-    with tab1:
-        st.subheader("📊 AI 시장 분석")
-        st.caption(f"사용 AI: **{market_ai}**")
-        
-        include_news = st.checkbox("뉴스 분석 포함", value=True)
-        
-        if st.button("🤖 AI 시장 분석 실행", key="market_ai_btn"):
-            # 선택된 AI로 분석기 생성
-            from main import StockAnalyzer
-            analyzer = StockAnalyzer(ai_provider=market_ai)
-            
-            with st.spinner(f"{market_ai}가 시장을 분석 중입니다..."):
-                try:
-                    analysis = analyzer.get_ai_market_analysis(include_news=include_news)
-                    st.markdown(analysis)
-                except Exception as e:
-                    st.error(f"AI 분석 실패: {e}")
-                    st.info(f"💡 .env 파일에 {market_ai.upper()}_API_KEY를 설정해주세요.")
-    
-    with tab2:
-        st.subheader("📈 AI 주식 분석")
-        st.caption(f"사용 AI: **{stock_ai}**")
-        
-        ticker = st.text_input("분석할 티커", value="AAPL", key="ai_ticker_input")
-        
-        if st.button("🤖 AI 주식 분석 실행", key="stock_ai_btn"):
-            from main import StockAnalyzer
-            analyzer = StockAnalyzer(ai_provider=stock_ai)
-            
-            with st.spinner(f"{stock_ai}가 {ticker.upper()}를 분석 중..."):
-                try:
-                    analysis = analyzer.get_ai_stock_analysis(ticker.upper())
-                    st.markdown(analysis)
-                except Exception as e:
-                    st.error(f"AI 분석 실패: {e}")
-    
-    with tab3:
-        st.subheader(" AI 포트폴리오 분석")
-        st.caption(f"사용 AI: **{portfolio_ai}**")
-        
-        portfolio_input = st.text_input(
-            "포트폴리오 (예: SPY:40,QQQ:30,TLT:30)", 
-            value="SPY:40,QQQ:30,TLT:20,GLD:10",
-            key="ai_portfolio_input"
-        )
-        
-        if st.button("🤖 AI 포트폴리오 분석", key="portfolio_ai_btn"):
-            # 파싱
-            holdings = {}
-            for item in portfolio_input.split(","):
-                if ":" in item:
-                    parts = item.strip().split(":")
-                    if len(parts) == 2:
-                        try:
-                            holdings[parts[0].upper()] = float(parts[1])
-                        except:
-                            pass
-            
-            if holdings:
-                from main import StockAnalyzer
-                analyzer = StockAnalyzer(ai_provider=portfolio_ai)
-                
-                with st.spinner(f"{portfolio_ai}가 포트폴리오를 분석 중..."):
-                    try:
-                        analysis = analyzer.get_ai_portfolio_analysis(holdings)
-                        st.markdown(analysis)
-                    except Exception as e:
-                        st.error(f"AI 분석 실패: {e}")
-            else:
-                st.warning("올바른 포트폴리오 형식을 입력하세요.")
 
 
 # ============================================================
