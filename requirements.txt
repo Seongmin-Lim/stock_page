@@ -1,0 +1,30 @@
+# 웹 프레임워크
+streamlit>=1.32.0
+
+# 데이터 수집
+yfinance>=0.2.36
+pandas>=2.0.0
+numpy>=1.24.0
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+
+# 시각화
+matplotlib>=3.7.0
+plotly>=5.18.0
+
+# AI API
+openai>=1.0.0
+anthropic>=0.18.0
+google-generativeai>=0.4.0
+
+# 환경 변수
+python-dotenv>=1.0.0
+
+# 스케줄링 (선택)
+schedule>=1.2.0
+
+# 데이터 저장
+openpyxl>=3.1.0
+
+# 데이터베이스 (PostgreSQL 지원)
+psycopg2-binary>=2.9.9
