@@ -2976,220 +2976,220 @@ def run_team_debate_v2(teams, qa_model: str, max_revisions: int, analysis_task: 
         # 팀별 작업 컨테이너 (Phase 1용)
         st.markdown("## 📋 Phase 1: 팀 내부 작업")
         team_work_containers = {}
-    for team in debate_system.available_teams:
-        team_work_containers[team.name] = st.expander(f"🔍 {team.name}", expanded=True)
-        with team_work_containers[team.name]:
-            st.info("대기 중...")
-    
-    # Phase 2: 발표
-    presentation_section = st.container()
-    with presentation_section:
-        st.markdown("## 🎤 Phase 2: 팀별 발표")
-    presentation_containers = {}
-    
-    # Phase 3: 토론
-    debate_section = st.container()
-    with debate_section:
-        st.markdown("## ⚔️ Phase 3: 팀간 토론")
-    
-    # Phase 4: QA
-    qa_section = st.container()
-    
-    # 토론 실행
-    total_phases = 4
-    current_phase = 0
-    
-    results = {}  # 최종 결과 저장
-    
-    for update in debate_system.run_team_debate(combined_data, analysis_task, max_revisions):
-        # 중단 요청 체크
-        if check_stop_requested():
-            st.warning("🛑 **토론이 강제 중단되었습니다.**")
-            status_text.text("🛑 중단됨")
-            progress_bar.progress(1.0)
-            st.session_state.team_debate_running = False
-            
-            # 현재까지 결과 표시
-            st.markdown("---")
-            st.markdown("### ⚠️ 중단 시점까지의 결과")
-            st.info(f"중단된 Phase: {current_phase}")
-            return
-        
-        stage = update.get("stage", "")
-        message = update.get("message", "")
-        content = update.get("content", "")
-        team_name = update.get("team", "")
-        
-        # 에러 처리
-        if stage == "error":
-            st.error(message)
-            st.session_state.team_debate_running = False
-            return
-        
-        # Phase 시작/완료 처리
-        if stage == "phase_start":
-            phase_num = update.get("phase", 1)
-            current_phase = phase_num
-            progress_bar.progress(phase_num / total_phases * 0.9)
-            status_text.text(f"🔄 {update.get('phase_name', '')}")
-            phase_placeholders[phase_num].markdown(f"🔵 **{phases[phase_num-1]}**")
-        
-        elif stage == "phase_complete":
-            phase_num = update.get("phase", 1)
-            phase_placeholders[phase_num].markdown(f"✅ ~~{phases[phase_num-1]}~~")
-        
-        # Phase 1: 팀 내부 작업
-        elif stage == "team_internal_start":
-            if team_name in team_work_containers:
-                with team_work_containers[team_name]:
-                    st.markdown(f"---\n**{message}**")
-        
-        elif stage == "member_analyzing":
-            status_text.text(message)
-            if team_name in team_work_containers:
-                with team_work_containers[team_name]:
-                    st.info(f"🔍 팀원({update.get('model', '')}) 분석 중...")
-        
-        elif stage == "member_draft_done":
-            if team_name in team_work_containers:
-                with team_work_containers[team_name]:
-                    with st.expander("📄 팀원 초안", expanded=False):
-                        st.markdown(content[:800] + "..." if len(str(content)) > 800 else content)
-        
-        elif stage == "leader_reviewing":
-            status_text.text(message)
-            if team_name in team_work_containers:
-                with team_work_containers[team_name]:
-                    st.info(f"👔 팀장({update.get('model', '')}) 검토 #{update.get('revision_round', 0)+1}")
-        
-        elif stage == "leader_decision":
-            if team_name in team_work_containers:
-                with team_work_containers[team_name]:
-                    if update.get("approved"):
-                        st.success(f"✅ 승인! (점수: {update.get('score', 0)}/10)")
-                    else:
-                        st.warning(f"📝 수정 요청 (점수: {update.get('score', 0)}/10)")
-        
-        elif stage == "member_revising":
-            status_text.text(message)
-        
-        elif stage == "member_revised":
-            if team_name in team_work_containers:
-                with team_work_containers[team_name]:
-                    with st.expander(f"✏️ 수정본 #{update.get('revision', 1)}", expanded=False):
-                        st.markdown(content[:500] + "..." if len(str(content)) > 500 else content)
-        
-        elif stage == "team_approved" or stage == "team_force_submit":
-            if team_name in team_work_containers:
-                with team_work_containers[team_name]:
-                    if stage == "team_approved":
-                        st.success(message)
-                    else:
-                        st.warning(message)
-        
-        elif stage == "team_internal_complete":
-            if team_name in team_work_containers:
-                with team_work_containers[team_name]:
-                    st.success(f"🏁 **{team_name} 내부 작업 완료** (수정 {update.get('revisions', 0)}회, 점수 {update.get('score', 0)}/10)")
+        for team in debate_system.available_teams:
+            team_work_containers[team.name] = st.expander(f"🔍 {team.name}", expanded=True)
+            with team_work_containers[team.name]:
+                st.info("대기 중...")
         
         # Phase 2: 발표
-        elif stage == "presentation_start":
-            status_text.text(message)
-            with presentation_section:
-                if team_name not in presentation_containers:
-                    presentation_containers[team_name] = st.expander(f"🎤 {team_name} 발표", expanded=True)
-        
-        elif stage == "presentation_done":
-            if team_name in presentation_containers:
-                with presentation_containers[team_name]:
-                    st.markdown(content)
+        presentation_section = st.container()
+        with presentation_section:
+            st.markdown("## 🎤 Phase 2: 팀별 발표")
+        presentation_containers = {}
         
         # Phase 3: 토론
-        elif stage == "debate_phase_start":
-            status_text.text(message)
+        debate_section = st.container()
+        with debate_section:
+            st.markdown("## ⚔️ Phase 3: 팀간 토론")
         
-        elif stage == "debate_arguments":
-            with debate_section:
-                st.markdown("### 💪 Round 1: 각 팀 강점 주장")
+        # Phase 4: QA
+        qa_section = st.container()
         
-        elif stage == "team_arguing":
-            status_text.text(message)
+        # 토론 실행
+        total_phases = 4
+        current_phase = 0
         
-        elif stage == "team_argument_done":
-            with debate_section:
-                with st.expander(f"💪 {team_name} 주장", expanded=False):
+        results = {}  # 최종 결과 저장
+        
+        for update in debate_system.run_team_debate(combined_data, analysis_task, max_revisions):
+            # 중단 요청 체크
+            if check_stop_requested():
+                st.warning("🛑 **토론이 강제 중단되었습니다.**")
+                status_text.text("🛑 중단됨")
+                progress_bar.progress(1.0)
+                st.session_state.team_debate_running = False
+                
+                # 현재까지 결과 표시
+                st.markdown("---")
+                st.markdown("### ⚠️ 중단 시점까지의 결과")
+                st.info(f"중단된 Phase: {current_phase}")
+                return
+            
+            stage = update.get("stage", "")
+            message = update.get("message", "")
+            content = update.get("content", "")
+            team_name = update.get("team", "")
+            
+            # 에러 처리
+            if stage == "error":
+                st.error(message)
+                st.session_state.team_debate_running = False
+                return
+            
+            # Phase 시작/완료 처리
+            if stage == "phase_start":
+                phase_num = update.get("phase", 1)
+                current_phase = phase_num
+                progress_bar.progress(phase_num / total_phases * 0.9)
+                status_text.text(f"🔄 {update.get('phase_name', '')}")
+                phase_placeholders[phase_num].markdown(f"🔵 **{phases[phase_num-1]}**")
+            
+            elif stage == "phase_complete":
+                phase_num = update.get("phase", 1)
+                phase_placeholders[phase_num].markdown(f"✅ ~~{phases[phase_num-1]}~~")
+            
+            # Phase 1: 팀 내부 작업
+            elif stage == "team_internal_start":
+                if team_name in team_work_containers:
+                    with team_work_containers[team_name]:
+                        st.markdown(f"---\n**{message}**")
+            
+            elif stage == "member_analyzing":
+                status_text.text(message)
+                if team_name in team_work_containers:
+                    with team_work_containers[team_name]:
+                        st.info(f"🔍 팀원({update.get('model', '')}) 분석 중...")
+            
+            elif stage == "member_draft_done":
+                if team_name in team_work_containers:
+                    with team_work_containers[team_name]:
+                        with st.expander("📄 팀원 초안", expanded=False):
+                            st.markdown(content[:800] + "..." if len(str(content)) > 800 else content)
+            
+            elif stage == "leader_reviewing":
+                status_text.text(message)
+                if team_name in team_work_containers:
+                    with team_work_containers[team_name]:
+                        st.info(f"👔 팀장({update.get('model', '')}) 검토 #{update.get('revision_round', 0)+1}")
+            
+            elif stage == "leader_decision":
+                if team_name in team_work_containers:
+                    with team_work_containers[team_name]:
+                        if update.get("approved"):
+                            st.success(f"✅ 승인! (점수: {update.get('score', 0)}/10)")
+                        else:
+                            st.warning(f"📝 수정 요청 (점수: {update.get('score', 0)}/10)")
+            
+            elif stage == "member_revising":
+                status_text.text(message)
+            
+            elif stage == "member_revised":
+                if team_name in team_work_containers:
+                    with team_work_containers[team_name]:
+                        with st.expander(f"✏️ 수정본 #{update.get('revision', 1)}", expanded=False):
+                            st.markdown(content[:500] + "..." if len(str(content)) > 500 else content)
+            
+            elif stage == "team_approved" or stage == "team_force_submit":
+                if team_name in team_work_containers:
+                    with team_work_containers[team_name]:
+                        if stage == "team_approved":
+                            st.success(message)
+                        else:
+                            st.warning(message)
+            
+            elif stage == "team_internal_complete":
+                if team_name in team_work_containers:
+                    with team_work_containers[team_name]:
+                        st.success(f"🏁 **{team_name} 내부 작업 완료** (수정 {update.get('revisions', 0)}회, 점수 {update.get('score', 0)}/10)")
+            
+            # Phase 2: 발표
+            elif stage == "presentation_start":
+                status_text.text(message)
+                with presentation_section:
+                    if team_name not in presentation_containers:
+                        presentation_containers[team_name] = st.expander(f"🎤 {team_name} 발표", expanded=True)
+            
+            elif stage == "presentation_done":
+                if team_name in presentation_containers:
+                    with presentation_containers[team_name]:
+                        st.markdown(content)
+            
+            # Phase 3: 토론
+            elif stage == "debate_phase_start":
+                status_text.text(message)
+            
+            elif stage == "debate_arguments":
+                with debate_section:
+                    st.markdown("### 💪 Round 1: 각 팀 강점 주장")
+            
+            elif stage == "team_arguing":
+                status_text.text(message)
+            
+            elif stage == "team_argument_done":
+                with debate_section:
+                    with st.expander(f"💪 {team_name} 주장", expanded=False):
+                        st.markdown(content)
+            
+            elif stage == "debate_rebuttals":
+                with debate_section:
+                    st.markdown("### ⚡ Round 2: 상호 반박")
+            
+            elif stage == "team_rebutting":
+                status_text.text(message)
+            
+            elif stage == "team_rebuttal_done":
+                with debate_section:
+                    with st.expander(f"⚡ {team_name} 반박", expanded=False):
+                        st.markdown(content)
+            
+            elif stage == "debate_defenses":
+                with debate_section:
+                    st.markdown("### 🛡️ Round 3: 최종 방어")
+            
+            elif stage == "team_defending":
+                status_text.text(message)
+            
+            elif stage == "team_defense_done":
+                with debate_section:
+                    with st.expander(f"🛡️ {team_name} 최종 방어", expanded=False):
+                        st.markdown(content)
+            
+            # Phase 4: QA 평가
+            elif stage == "qa_phase_start":
+                status_text.text(message)
+                with qa_section:
+                    st.markdown("## 🏛️ Phase 4: QA 최종 평가")
+                    st.info(f"⚖️ {update.get('model', 'AI')} 심판이 평가 중...")
+            
+            elif stage == "qa_evaluating":
+                status_text.text(message)
+            
+            elif stage == "qa_done":
+                with qa_section:
+                    st.markdown("### 📊 최종 평가 결과")
                     st.markdown(content)
-        
-        elif stage == "debate_rebuttals":
-            with debate_section:
-                st.markdown("### ⚡ Round 2: 상호 반박")
-        
-        elif stage == "team_rebutting":
-            status_text.text(message)
-        
-        elif stage == "team_rebuttal_done":
-            with debate_section:
-                with st.expander(f"⚡ {team_name} 반박", expanded=False):
-                    st.markdown(content)
-        
-        elif stage == "debate_defenses":
-            with debate_section:
-                st.markdown("### 🛡️ Round 3: 최종 방어")
-        
-        elif stage == "team_defending":
-            status_text.text(message)
-        
-        elif stage == "team_defense_done":
-            with debate_section:
-                with st.expander(f"🛡️ {team_name} 최종 방어", expanded=False):
-                    st.markdown(content)
-        
-        # Phase 4: QA 평가
-        elif stage == "qa_phase_start":
-            status_text.text(message)
-            with qa_section:
-                st.markdown("## 🏛️ Phase 4: QA 최종 평가")
-                st.info(f"⚖️ {update.get('model', 'AI')} 심판이 평가 중...")
-        
-        elif stage == "qa_evaluating":
-            status_text.text(message)
-        
-        elif stage == "qa_done":
-            with qa_section:
-                st.markdown("### 📊 최종 평가 결과")
-                st.markdown(content)
-        
-        # 완료
-        elif stage == "complete":
-            progress_bar.progress(1.0)
-            status_text.text("🏁 토론 완료!")
-            st.balloons()
             
-            results = update
-            
-            st.divider()
-            st.markdown("## 🏆 최종 결과 요약")
-            
-            teams_data = update.get("teams", {})
-            cols = st.columns(len(teams_data))
-            
-            for idx, (tname, data) in enumerate(teams_data.items()):
-                with cols[idx % len(cols)]:
-                    st.markdown(f"### {tname}")
-                    approved_icon = "✅" if data.get("approved") else "⚠️"
-                    st.markdown(f"- 승인 상태: {approved_icon}")
-                    st.markdown(f"- 팀장 점수: {data.get('score', 'N/A')}/10")
-                    st.markdown(f"- 수정 횟수: {data.get('revisions', 0)}회")
-                    
-                    with st.expander("📄 최종 분석"):
-                        st.markdown(data.get("analysis", "N/A"))
-                    
-                    with st.expander("🎤 발표"):
-                        st.markdown(data.get("presentation", "N/A"))
-            
-            # QA 평가 결과
-            st.markdown("### 🏛️ QA 최종 평가")
-            st.markdown(update.get("qa_evaluation", "N/A"))
+            # 완료
+            elif stage == "complete":
+                progress_bar.progress(1.0)
+                status_text.text("🏁 토론 완료!")
+                st.balloons()
+                
+                results = update
+                
+                st.divider()
+                st.markdown("## 🏆 최종 결과 요약")
+                
+                teams_data = update.get("teams", {})
+                cols = st.columns(len(teams_data))
+                
+                for idx, (tname, data) in enumerate(teams_data.items()):
+                    with cols[idx % len(cols)]:
+                        st.markdown(f"### {tname}")
+                        approved_icon = "✅" if data.get("approved") else "⚠️"
+                        st.markdown(f"- 승인 상태: {approved_icon}")
+                        st.markdown(f"- 팀장 점수: {data.get('score', 'N/A')}/10")
+                        st.markdown(f"- 수정 횟수: {data.get('revisions', 0)}회")
+                        
+                        with st.expander("📄 최종 분석"):
+                            st.markdown(data.get("analysis", "N/A"))
+                        
+                        with st.expander("🎤 발표"):
+                            st.markdown(data.get("presentation", "N/A"))
+                
+                # QA 평가 결과
+                st.markdown("### 🏛️ QA 최종 평가")
+                st.markdown(update.get("qa_evaluation", "N/A"))
     
     finally:
         # 토론 상태 초기화
