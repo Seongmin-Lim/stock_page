@@ -34,7 +34,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # 포트폴리오 데이터 임포트
 from config.portfolio_data import (
     RECOMMENDED_PORTFOLIOS, SECTOR_REPRESENTATIVES, 
-    REPRESENTATIVE_STOCKS, CYCLE_PORTFOLIO_ADJUSTMENTS
+    REPRESENTATIVE_STOCKS, CYCLE_PORTFOLIO_ADJUSTMENTS,
+    ASSET_CLASS_RECOMMENDATIONS
 )
 
 # 데이터베이스 임포트
@@ -268,6 +269,520 @@ def create_gauge_chart(value, title, min_val=0, max_val=100,
     return fig
 
 
+def create_colorbar_with_marker(value: float, title: str, min_val: float, max_val: float,
+                                  ranges: list, current_label: str = None) -> go.Figure:
+    """
+    컬러바에 마커를 표시하는 시각화 생성
+    
+    Args:
+        value: 현재 값
+        title: 차트 제목
+        min_val: 최소값
+        max_val: 최대값
+        ranges: [(start, end, color), ...] 형태의 범위 리스트
+        current_label: 현재 상태 라벨
+    
+    Returns:
+        Plotly Figure
+    """
+    fig = go.Figure()
+    
+    # 색상 범위 막대 추가
+    for i, (start, end, color) in enumerate(ranges):
+        fig.add_shape(
+            type="rect",
+            x0=start, x1=end, y0=0.3, y1=0.7,
+            fillcolor=color,
+            line=dict(width=0),
+            layer="below"
+        )
+    
+    # 현재 값 마커 (삼각형)
+    fig.add_trace(go.Scatter(
+        x=[value],
+        y=[0.5],
+        mode='markers+text',
+        marker=dict(
+            symbol='diamond',
+            size=20,
+            color='white',
+            line=dict(color='black', width=2)
+        ),
+        text=[f"<b>{value:.1f}</b>"],
+        textposition="top center",
+        textfont=dict(size=14, color='white'),
+        showlegend=False,
+        hovertemplate=f"{title}: {value:.1f}<extra></extra>"
+    ))
+    
+    fig.update_layout(
+        title=dict(
+            text=f"<b>{title}</b>" + (f"<br><span style='font-size:12px;color:gray'>{current_label}</span>" if current_label else ""),
+            x=0.5,
+            font=dict(size=14)
+        ),
+        xaxis=dict(
+            range=[min_val, max_val],
+            showgrid=False,
+            zeroline=False,
+            showticklabels=True,
+            tickvals=[r[0] for r in ranges] + [ranges[-1][1]],
+            tickfont=dict(size=10)
+        ),
+        yaxis=dict(
+            range=[0, 1],
+            showgrid=False,
+            zeroline=False,
+            showticklabels=False
+        ),
+        height=100,
+        margin=dict(l=10, r=10, t=50, b=20),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
+    
+    return fig
+
+
+def create_historical_trend_chart(ticker: str, title: str, years: int = 5, 
+                                   color: str = "#1f77b4") -> go.Figure:
+    """
+    최근 N년간 히스토리컬 추이 차트 생성
+    
+    Args:
+        ticker: yfinance 티커 심볼
+        title: 차트 제목
+        years: 조회 기간 (년)
+        color: 라인 색상
+    
+    Returns:
+        Plotly Figure
+    """
+    import yfinance as yf
+    from datetime import datetime, timedelta
+    
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=years*365)
+    
+    try:
+        data = yf.download(ticker, start=start_date.strftime('%Y-%m-%d'), 
+                          end=end_date.strftime('%Y-%m-%d'), progress=False)
+        
+        if data.empty:
+            # 데이터가 없으면 빈 차트 반환
+            fig = go.Figure()
+            fig.add_annotation(
+                text="데이터 없음",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=14, color="gray")
+            )
+            fig.update_layout(height=150, margin=dict(l=10, r=10, t=30, b=10))
+            return fig
+        
+        # Close 컬럼 추출 (MultiIndex 대응)
+        if isinstance(data.columns, pd.MultiIndex):
+            close_data = data['Close'].iloc[:, 0] if len(data['Close'].columns) > 0 else data['Close']
+        else:
+            close_data = data['Close']
+        
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scatter(
+            x=close_data.index,
+            y=close_data.values,
+            mode='lines',
+            line=dict(color=color, width=2),
+            fill='tozeroy',
+            fillcolor=f'rgba{tuple(list(int(color.lstrip("#")[i:i+2], 16) for i in (0, 2, 4)) + [0.1])}',
+            hovertemplate='%{x|%Y-%m-%d}<br>값: %{y:.2f}<extra></extra>'
+        ))
+        
+        # 최고/최저점 표시
+        max_idx = close_data.idxmax()
+        min_idx = close_data.idxmin()
+        max_val = close_data.max()
+        min_val = close_data.min()
+        
+        fig.add_trace(go.Scatter(
+            x=[max_idx, min_idx],
+            y=[max_val, min_val],
+            mode='markers+text',
+            marker=dict(size=8, color=['red', 'green']),
+            text=[f'최고: {max_val:.1f}', f'최저: {min_val:.1f}'],
+            textposition=['top center', 'bottom center'],
+            textfont=dict(size=9),
+            showlegend=False,
+            hoverinfo='skip'
+        ))
+        
+        fig.update_layout(
+            title=dict(text=f"📈 {title} ({years}년 추이)", font=dict(size=12)),
+            xaxis=dict(showgrid=True, gridcolor='rgba(128,128,128,0.2)'),
+            yaxis=dict(showgrid=True, gridcolor='rgba(128,128,128,0.2)'),
+            height=180,
+            margin=dict(l=10, r=10, t=35, b=10),
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            hovermode='x unified'
+        )
+        
+        return fig
+        
+    except Exception as e:
+        fig = go.Figure()
+        fig.add_annotation(
+            text=f"차트 로드 실패",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False,
+            font=dict(size=12, color="gray")
+        )
+        fig.update_layout(height=150, margin=dict(l=10, r=10, t=30, b=10))
+        return fig
+
+
+def create_vix_fear_greed_combined_chart(vix_value: float, fg_value: float, period: str = "1Y") -> go.Figure:
+    """
+    VIX와 공포탐욕 지수를 함께 보여주는 이중축 차트 (히스토리컬 + 현재값)
+    
+    Args:
+        vix_value: 현재 VIX 값
+        fg_value: 현재 공포탐욕 지수
+        period: 기간 ("1M", "3M", "6M", "1Y", "2Y", "5Y")
+    
+    Returns:
+        Plotly Figure
+    """
+    import yfinance as yf
+    from datetime import datetime, timedelta
+    
+    # 기간 매핑
+    period_days = {
+        "1M": 30, "3M": 90, "6M": 180, 
+        "1Y": 365, "2Y": 730, "5Y": 1825
+    }
+    days = period_days.get(period, 365)
+    
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=days)
+    
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    
+    try:
+        # VIX 데이터 가져오기
+        vix_data = yf.download("^VIX", start=start_date.strftime('%Y-%m-%d'), 
+                              end=end_date.strftime('%Y-%m-%d'), progress=False)
+        
+        if not vix_data.empty:
+            if isinstance(vix_data.columns, pd.MultiIndex):
+                vix_close = vix_data['Close'].iloc[:, 0]
+            else:
+                vix_close = vix_data['Close']
+            
+            # VIX 라인 (왼쪽 Y축)
+            fig.add_trace(
+                go.Scatter(
+                    x=vix_close.index, y=vix_close.values,
+                    name="VIX", line=dict(color="#dc3545", width=2),
+                    hovertemplate='VIX: %{y:.1f}<extra></extra>'
+                ),
+                secondary_y=False
+            )
+            
+            # 현재 VIX 마커
+            fig.add_trace(
+                go.Scatter(
+                    x=[vix_close.index[-1]], y=[vix_value],
+                    mode='markers+text',
+                    marker=dict(size=12, color="#dc3545", symbol='diamond'),
+                    text=[f'{vix_value:.1f}'],
+                    textposition='top right',
+                    name=f'현재 VIX: {vix_value:.1f}',
+                    showlegend=False,
+                    hoverinfo='skip'
+                ),
+                secondary_y=False
+            )
+        
+        # 공포탐욕 지수는 히스토리컬 데이터가 없으므로 현재값만 표시
+        # 가상의 평균선으로 참고 표시 (50 기준선)
+        if fg_value:
+            fig.add_hline(y=50, line_dash="dash", line_color="gray", 
+                         annotation_text="F&G 중립(50)", secondary_y=True)
+            
+            # 현재 공포탐욕 수평선
+            fig.add_hline(y=fg_value, line_dash="dot", line_color="#1f77b4",
+                         annotation_text=f"현재 F&G: {fg_value:.0f}", secondary_y=True)
+        
+        # VIX 영역 표시 (배경)
+        fig.add_hrect(y0=0, y1=15, fillcolor="green", opacity=0.1, 
+                     line_width=0, secondary_y=False, annotation_text="안정")
+        fig.add_hrect(y0=15, y1=20, fillcolor="lightgreen", opacity=0.1, 
+                     line_width=0, secondary_y=False)
+        fig.add_hrect(y0=20, y1=30, fillcolor="yellow", opacity=0.1, 
+                     line_width=0, secondary_y=False, annotation_text="주의")
+        fig.add_hrect(y0=30, y1=80, fillcolor="red", opacity=0.1, 
+                     line_width=0, secondary_y=False, annotation_text="공포")
+        
+        fig.update_layout(
+            title=dict(text=f"📊 VIX & 공포탐욕 지수 ({period})", font=dict(size=14)),
+            height=280,
+            margin=dict(l=10, r=10, t=40, b=10),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            hovermode='x unified'
+        )
+        
+        fig.update_yaxes(title_text="VIX", secondary_y=False, range=[0, 80])
+        fig.update_yaxes(title_text="공포탐욕(F&G)", secondary_y=True, range=[0, 100])
+        
+        return fig
+        
+    except Exception as e:
+        fig = go.Figure()
+        fig.add_annotation(text="데이터 로드 실패", x=0.5, y=0.5, 
+                          xref="paper", yref="paper", showarrow=False)
+        fig.update_layout(height=200)
+        return fig
+
+
+def create_index_chart(ticker: str, name: str, period: str = "1Y") -> go.Figure:
+    """
+    주요 지수 차트 생성
+    
+    Args:
+        ticker: yfinance 티커
+        name: 지수 이름
+        period: 기간
+    
+    Returns:
+        Plotly Figure
+    """
+    import yfinance as yf
+    from datetime import datetime, timedelta
+    
+    period_days = {"1M": 30, "3M": 90, "6M": 180, "1Y": 365, "2Y": 730, "5Y": 1825}
+    days = period_days.get(period, 365)
+    
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=days)
+    
+    try:
+        data = yf.download(ticker, start=start_date.strftime('%Y-%m-%d'),
+                          end=end_date.strftime('%Y-%m-%d'), progress=False)
+        
+        if data.empty:
+            fig = go.Figure()
+            fig.add_annotation(text="데이터 없음", x=0.5, y=0.5,
+                              xref="paper", yref="paper", showarrow=False)
+            fig.update_layout(height=200)
+            return fig
+        
+        if isinstance(data.columns, pd.MultiIndex):
+            close = data['Close'].iloc[:, 0]
+        else:
+            close = data['Close']
+        
+        # 수익률 계산
+        start_price = close.iloc[0]
+        end_price = close.iloc[-1]
+        return_pct = ((end_price - start_price) / start_price) * 100
+        
+        color = "#28a745" if return_pct >= 0 else "#dc3545"
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=close.index, y=close.values,
+            mode='lines', name=name,
+            line=dict(color=color, width=2),
+            fill='tozeroy',
+            fillcolor=f'rgba{tuple(list(int(color.lstrip("#")[i:i+2], 16) for i in (0, 2, 4)) + [0.1])}',
+            hovertemplate='%{x|%Y-%m-%d}<br>%{y:,.0f}<extra></extra>'
+        ))
+        
+        # 현재값 마커
+        fig.add_trace(go.Scatter(
+            x=[close.index[-1]], y=[end_price],
+            mode='markers+text',
+            marker=dict(size=10, color=color),
+            text=[f'{end_price:,.0f}'],
+            textposition='top right',
+            showlegend=False,
+            hoverinfo='skip'
+        ))
+        
+        fig.update_layout(
+            title=dict(text=f"📈 {name} ({period}) | 수익률: {return_pct:+.1f}%", font=dict(size=13)),
+            height=250,
+            margin=dict(l=10, r=10, t=40, b=10),
+            xaxis=dict(showgrid=True, gridcolor='rgba(128,128,128,0.2)'),
+            yaxis=dict(showgrid=True, gridcolor='rgba(128,128,128,0.2)'),
+            hovermode='x unified'
+        )
+        
+        return fig
+        
+    except Exception as e:
+        fig = go.Figure()
+        fig.add_annotation(text="차트 로드 실패", x=0.5, y=0.5,
+                          xref="paper", yref="paper", showarrow=False)
+        fig.update_layout(height=200)
+        return fig
+
+
+def create_multi_index_chart(selected_indices: list, index_options: dict, period: str = "1Y") -> go.Figure:
+    """
+    여러 지수를 동시에 비교하는 차트 생성 (수익률 정규화)
+    
+    Args:
+        selected_indices: 선택된 지수 이름 리스트
+        index_options: 지수 옵션 딕셔너리 {이름: (티커, 국기)}
+        period: 기간
+    
+    Returns:
+        Plotly Figure
+    """
+    import yfinance as yf
+    from datetime import datetime, timedelta
+    
+    period_days = {"1M": 30, "3M": 90, "6M": 180, "1Y": 365, "2Y": 730, "5Y": 1825}
+    days = period_days.get(period, 365)
+    
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=days)
+    
+    # 색상 팔레트
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
+              '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+    
+    fig = go.Figure()
+    returns_info = []
+    
+    for i, index_name in enumerate(selected_indices):
+        if index_name not in index_options:
+            continue
+            
+        ticker, flag = index_options[index_name]
+        color = colors[i % len(colors)]
+        
+        try:
+            data = yf.download(ticker, start=start_date.strftime('%Y-%m-%d'),
+                              end=end_date.strftime('%Y-%m-%d'), progress=False)
+            
+            if data.empty:
+                continue
+            
+            if isinstance(data.columns, pd.MultiIndex):
+                close = data['Close'].iloc[:, 0]
+            else:
+                close = data['Close']
+            
+            # 수익률로 정규화 (시작점 = 0%)
+            normalized = ((close / close.iloc[0]) - 1) * 100
+            
+            # 최종 수익률
+            final_return = normalized.iloc[-1]
+            returns_info.append((index_name, final_return, flag))
+            
+            fig.add_trace(go.Scatter(
+                x=normalized.index, 
+                y=normalized.values,
+                mode='lines',
+                name=f"{flag} {index_name}",
+                line=dict(color=color, width=2),
+                hovertemplate=f'{index_name}<br>%{{x|%Y-%m-%d}}<br>수익률: %{{y:+.1f}}%<extra></extra>'
+            ))
+            
+        except Exception as e:
+            continue
+    
+    # 0% 기준선
+    fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
+    
+    # 수익률 순위 정보
+    if returns_info:
+        returns_info.sort(key=lambda x: x[1], reverse=True)
+        rank_text = " | ".join([f"{flag}{name}: {ret:+.1f}%" for name, ret, flag in returns_info])
+    else:
+        rank_text = "데이터 없음"
+    
+    fig.update_layout(
+        title=dict(text=f"📊 지수 비교 ({period})", font=dict(size=14)),
+        height=320,
+        margin=dict(l=10, r=10, t=40, b=50),
+        xaxis=dict(showgrid=True, gridcolor='rgba(128,128,128,0.2)'),
+        yaxis=dict(
+            showgrid=True, 
+            gridcolor='rgba(128,128,128,0.2)',
+            title="수익률 (%)",
+            ticksuffix="%"
+        ),
+        legend=dict(
+            orientation="h", 
+            yanchor="bottom", 
+            y=-0.25, 
+            xanchor="center", 
+            x=0.5
+        ),
+        hovermode='x unified'
+    )
+    
+    # 수익률 순위 annotation
+    fig.add_annotation(
+        text=rank_text,
+        xref="paper", yref="paper",
+        x=0.5, y=-0.35,
+        showarrow=False,
+        font=dict(size=10),
+        align="center"
+    )
+    
+    return fig
+
+
+def get_exchange_rates() -> dict:
+    """
+    주요 환율 정보 가져오기 (달러/원, 엔/원, 위안/원, 유로/원)
+    
+    Returns:
+        dict: 환율 정보
+    """
+    import yfinance as yf
+    
+    # 환율 티커 (yfinance)
+    exchange_tickers = {
+        "USD/KRW": "KRW=X",      # 달러/원
+        "JPY/KRW": "JPYKRW=X",   # 엔/원 (100엔 기준은 별도 계산)
+        "CNY/KRW": "CNYKRW=X",   # 위안/원
+        "EUR/KRW": "EURKRW=X",   # 유로/원
+    }
+    
+    rates = {}
+    
+    for name, ticker in exchange_tickers.items():
+        try:
+            data = yf.Ticker(ticker)
+            hist = data.history(period="5d")
+            
+            if not hist.empty:
+                current = hist['Close'].iloc[-1]
+                previous = hist['Close'].iloc[-2] if len(hist) > 1 else current
+                change = current - previous
+                change_pct = (change / previous) * 100 if previous else 0
+                
+                rates[name] = {
+                    "current": current,
+                    "previous": previous,
+                    "change": change,
+                    "change_percent": change_pct
+                }
+            else:
+                rates[name] = {"current": None, "error": "데이터 없음"}
+        except Exception as e:
+            rates[name] = {"current": None, "error": str(e)}
+    
+    return rates
+
+
 def main():
     """메인 페이지"""
     
@@ -490,7 +1005,7 @@ def show_home_page():
     
     st.markdown(f"""
     <div style="background-color: {phase_color}20; padding: 20px; border-radius: 10px; border-left: 5px solid {phase_color}; margin-bottom: 20px;">
-        <h3>{phase_icon} 현재 경제 사이클: <strong>{phase}</strong> (신뢰도: {confidence}%)</h3>
+        <h3>{phase_icon} 현재 경제 사이클: <strong>{phase}</strong></h3>
         <p>{economic_cycle.get('description', '')}</p>
     </div>
     """, unsafe_allow_html=True)
@@ -549,47 +1064,164 @@ def show_home_page():
             delta=fg_data.get('rating', '')
         )
     
+    # ===== 환율 정보 섹션 (테이블) =====
+    st.divider()
+    st.subheader("💱 주요 환율")
+    
+    exchange_rates = get_exchange_rates()
+    
+    # 환율 데이터를 테이블로 구성
+    exchange_table_data = []
+    
+    # USD/KRW
+    usd = exchange_rates.get("USD/KRW", {})
+    if usd.get("current"):
+        change_pct = usd.get('change_percent', 0)
+        change_arrow = "🔺" if change_pct > 0 else "🔻" if change_pct < 0 else "➖"
+        exchange_table_data.append({
+            "통화": "🇺🇸 달러/원 (USD/KRW)",
+            "현재": f"₩{usd['current']:,.1f}",
+            "전일대비": f"{change_arrow} {change_pct:+.2f}%",
+            "전일종가": f"₩{usd.get('previous', 0):,.1f}"
+        })
+    
+    # JPY/KRW (100엔 기준)
+    jpy = exchange_rates.get("JPY/KRW", {})
+    if jpy.get("current"):
+        jpy_100 = jpy['current'] * 100
+        jpy_prev_100 = jpy.get('previous', jpy['current']) * 100
+        change_pct = jpy.get('change_percent', 0)
+        change_arrow = "🔺" if change_pct > 0 else "🔻" if change_pct < 0 else "➖"
+        exchange_table_data.append({
+            "통화": "🇯🇵 100엔/원 (JPY/KRW)",
+            "현재": f"₩{jpy_100:,.1f}",
+            "전일대비": f"{change_arrow} {change_pct:+.2f}%",
+            "전일종가": f"₩{jpy_prev_100:,.1f}"
+        })
+    
+    # CNY/KRW
+    cny = exchange_rates.get("CNY/KRW", {})
+    if cny.get("current"):
+        change_pct = cny.get('change_percent', 0)
+        change_arrow = "🔺" if change_pct > 0 else "🔻" if change_pct < 0 else "➖"
+        exchange_table_data.append({
+            "통화": "🇨🇳 위안/원 (CNY/KRW)",
+            "현재": f"₩{cny['current']:,.1f}",
+            "전일대비": f"{change_arrow} {change_pct:+.2f}%",
+            "전일종가": f"₩{cny.get('previous', 0):,.1f}"
+        })
+    
+    # EUR/KRW
+    eur = exchange_rates.get("EUR/KRW", {})
+    if eur.get("current"):
+        change_pct = eur.get('change_percent', 0)
+        change_arrow = "🔺" if change_pct > 0 else "🔻" if change_pct < 0 else "➖"
+        exchange_table_data.append({
+            "통화": "🇪🇺 유로/원 (EUR/KRW)",
+            "현재": f"₩{eur['current']:,.1f}",
+            "전일대비": f"{change_arrow} {change_pct:+.2f}%",
+            "전일종가": f"₩{eur.get('previous', 0):,.1f}"
+        })
+    
+    if exchange_table_data:
+        df_exchange = pd.DataFrame(exchange_table_data)
+        st.dataframe(
+            df_exchange,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "통화": st.column_config.TextColumn("통화", width="medium"),
+                "현재": st.column_config.TextColumn("현재가", width="small"),
+                "전일대비": st.column_config.TextColumn("전일대비", width="small"),
+                "전일종가": st.column_config.TextColumn("전일종가", width="small")
+            }
+        )
+    else:
+        st.warning("환율 데이터를 가져올 수 없습니다.")
+    
     st.divider()
     
-    # 게이지 차트
+    # ===== 지표 시각화 섹션 (개선) =====
     st.subheader("📉 지표 시각화")
     
-    # 색상 범례 설명 (VIX + Fear & Greed)
-    col_legend1, col_legend2 = st.columns(2)
+    # 기간 선택 및 지수 선택
+    opt_col1, opt_col2 = st.columns([1, 2])
     
-    with col_legend1:
-        st.markdown("""
-        <div style="background: linear-gradient(90deg, #28a745, #90EE90, #ffc107, #dc3545); height: 12px; border-radius: 6px; margin-bottom: 5px;"></div>
-        """, unsafe_allow_html=True)
-        st.markdown("""
-        | VIX 범위 | 상태 | 투자 의미 |
-        |:---:|:---:|:---|
-        | **0-15** 🟢 | 극저변동성 | 시장 안정, 상승 추세 |
-        | **15-20** 🟢 | 저변동성 | 정상적 시장 환경 |
-        | **20-30** 🟡 | 중간 변동성 | 주의 필요, 조정 가능 |
-        | **30+** 🔴 | 고변동성 | 공포/위기, 매수 기회 가능 |
-        """)
+    with opt_col1:
+        chart_period = st.selectbox(
+            "📅 차트 기간",
+            options=["1M", "3M", "6M", "1Y", "2Y", "5Y"],
+            index=3,  # 기본값 1Y
+            key="home_chart_period"
+        )
     
-    with col_legend2:
-        st.markdown("""
-        <div style="background: linear-gradient(90deg, #dc3545, #fd7e14, #6c757d, #90EE90, #28a745); height: 12px; border-radius: 6px; margin-bottom: 5px;"></div>
-        """, unsafe_allow_html=True)
-        st.markdown("""
-        | F&G 범위 | 상태 | 투자 의미 |
-        |:---:|:---:|:---|
-        | **0-25** 🔴 | 극도의 공포 | 역발상 매수 기회 |
-        | **25-45** 🟠 | 공포 | 저가 매수 구간 |
-        | **45-55** ⚪ | 중립 | 균형 잡힌 시장 |
-        | **55-75** 🟢 | 탐욕 | 차익 실현 고려 |
-        | **75-100** 💚 | 극도의 탐욕 | 과열 경계, 분할 매도 |
-        """)
+    with opt_col2:
+        index_options = {
+            "S&P 500": ("^GSPC", "🇺🇸"),
+            "나스닥 100": ("^NDX", "🇺🇸"),
+            "다우존스": ("^DJI", "🇺🇸"),
+            "코스피": ("^KS11", "🇰🇷"),
+            "코스닥": ("^KQ11", "🇰🇷"),
+            "니케이 225": ("^N225", "🇯🇵"),
+            "항셍": ("^HSI", "🇭🇰"),
+            "상해종합": ("000001.SS", "🇨🇳"),
+            "DAX": ("^GDAXI", "🇩🇪"),
+            "FTSE 100": ("^FTSE", "🇬🇧")
+        }
+        selected_indices = st.multiselect(
+            "📊 비교할 지수 선택 (다중 선택 가능)",
+            options=list(index_options.keys()),
+            default=["S&P 500", "코스피"],
+            key="home_index_multiselect"
+        )
+    
+    # 색상 범례 (접을 수 있게)
+    with st.expander("📋 VIX & 공포탐욕 지수 범례", expanded=False):
+        col_legend1, col_legend2 = st.columns(2)
+        
+        with col_legend1:
+            st.markdown("""
+            <div style="background: linear-gradient(90deg, #28a745, #90EE90, #ffc107, #dc3545); height: 12px; border-radius: 6px; margin-bottom: 5px;"></div>
+            """, unsafe_allow_html=True)
+            st.markdown("""
+            | VIX 범위 | 상태 | 투자 의미 |
+            |:---:|:---:|:---|
+            | **0-15** 🟢 | 극저변동성 | 시장 안정 |
+            | **15-20** 🟢 | 저변동성 | 정상 환경 |
+            | **20-30** 🟡 | 중간 변동성 | 주의 필요 |
+            | **30+** 🔴 | 고변동성 | 공포/기회 |
+            """)
+        
+        with col_legend2:
+            st.markdown("""
+            <div style="background: linear-gradient(90deg, #dc3545, #fd7e14, #6c757d, #90EE90, #28a745); height: 12px; border-radius: 6px; margin-bottom: 5px;"></div>
+            """, unsafe_allow_html=True)
+            st.markdown("""
+            | F&G 범위 | 상태 | 투자 의미 |
+            |:---:|:---:|:---|
+            | **0-25** 🔴 | 극도의 공포 | 매수 기회 |
+            | **25-45** 🟠 | 공포 | 저가 매수 |
+            | **45-55** ⚪ | 중립 | 균형 시장 |
+            | **55-75** 🟢 | 탐욕 | 차익 실현 |
+            | **75-100** 💚 | 극도의 탐욕 | 과열 경계 |
+            """)
     
     col1, col2 = st.columns(2)
     
     with col1:
-        # VIX 게이지
+        # VIX 컬러바
         st.caption("💡 VIX: 낮을수록(🟢) 시장 안정, 높을수록(🔴) 변동성 확대")
-        vix_gauge = create_gauge_chart(
+        
+        if vix_value < 15:
+            vix_label = "🟢 극저변동성 - 시장 안정"
+        elif vix_value < 20:
+            vix_label = "🟢 저변동성 - 정상 환경"
+        elif vix_value < 30:
+            vix_label = "🟡 중간 변동성 - 주의 필요"
+        else:
+            vix_label = "🔴 고변동성 - 공포/매수기회"
+        
+        vix_colorbar = create_colorbar_with_marker(
             vix_value, "VIX 지수",
             min_val=0, max_val=50,
             ranges=[
@@ -597,25 +1229,53 @@ def show_home_page():
                 (15, 20, "#90EE90"),
                 (20, 30, "#ffc107"),
                 (30, 50, "#dc3545")
-            ]
+            ],
+            current_label=vix_label
         )
-        st.plotly_chart(vix_gauge, use_container_width=True)
+        st.plotly_chart(vix_colorbar, use_container_width=True)
+        
+        # VIX와 공포탐욕 통합 차트
+        fg_val = fg_value if fg_value else 50
+        combined_chart = create_vix_fear_greed_combined_chart(vix_value, fg_val, chart_period)
+        st.plotly_chart(combined_chart, use_container_width=True)
     
     with col2:
-        # 공포탐욕 게이지
+        # 공포탐욕 컬러바
         st.caption("💡 Fear & Greed: 낮을수록(🔴) 공포(매수기회), 높을수록(🟢) 탐욕(과열주의)")
-        fg_gauge = create_gauge_chart(
-            fg_value if fg_value else 50, "공포탐욕 지수",
+        
+        fg_val = fg_value if fg_value else 50
+        
+        if fg_val < 25:
+            fg_label = "🔴 극도의 공포 - 매수 기회"
+        elif fg_val < 45:
+            fg_label = "🟠 공포 - 저가 매수 구간"
+        elif fg_val < 55:
+            fg_label = "⚪ 중립 - 균형 시장"
+        elif fg_val < 75:
+            fg_label = "🟢 탐욕 - 차익 실현 고려"
+        else:
+            fg_label = "💚 극도의 탐욕 - 과열 경계"
+        
+        fg_colorbar = create_colorbar_with_marker(
+            fg_val, "공포탐욕 지수",
             min_val=0, max_val=100,
             ranges=[
-                (0, 25, "#dc3545"),      # 극도의 공포
-                (25, 45, "#fd7e14"),     # 공포
-                (45, 55, "#6c757d"),     # 중립
-                (55, 75, "#90EE90"),     # 탐욕
-                (75, 100, "#28a745")     # 극도의 탐욕
-            ]
+                (0, 25, "#dc3545"),
+                (25, 45, "#fd7e14"),
+                (45, 55, "#6c757d"),
+                (55, 75, "#90EE90"),
+                (75, 100, "#28a745")
+            ],
+            current_label=fg_label
         )
-        st.plotly_chart(fg_gauge, use_container_width=True)
+        st.plotly_chart(fg_colorbar, use_container_width=True)
+    
+    # 다중 지수 비교 차트 (전체 너비)
+    if selected_indices:
+        multi_index_chart = create_multi_index_chart(selected_indices, index_options, chart_period)
+        st.plotly_chart(multi_index_chart, use_container_width=True)
+    else:
+        st.info("📊 비교할 지수를 선택해주세요.")
     
     # 추천 자산 배분 및 섹터
     st.divider()
@@ -627,15 +1287,113 @@ def show_home_page():
         allocation = economic_cycle.get('recommendations', {}).get('asset_allocation', {})
         
         if allocation:
-            fig = px.pie(
-                values=list(allocation.values()),
-                names=list(allocation.keys()),
-                title=f"{phase} 추천 자산 배분",
+            # 호버 정보 생성
+            asset_names = list(allocation.keys())
+            asset_values = list(allocation.values())
+            
+            # 호버 텍스트 생성 - 각 자산에 대한 상세 정보
+            hover_texts = []
+            custom_data = []
+            
+            for asset_name in asset_names:
+                # ASSET_CLASS_RECOMMENDATIONS에서 매핑된 키 찾기
+                asset_key_map = {
+                    "주식": "주식", "주식형": "주식", "미국주식": "주식", "주식(미국)": "주식",
+                    "채권": "채권", "채권형": "채권", "국채": "채권", "회사채": "채권",
+                    "금": "금", "골드": "금", "금/원자재": "금",
+                    "현금": "현금", "현금성": "현금", "달러": "현금", "현금/달러": "현금",
+                    "원자재": "원자재", "커머디티": "원자재",
+                    "부동산": "부동산", "리츠": "부동산", "REITs": "부동산"
+                }
+                
+                # 매핑된 키로 데이터 가져오기
+                mapped_key = None
+                for key, mapped in asset_key_map.items():
+                    if key in asset_name or asset_name in key:
+                        mapped_key = mapped
+                        break
+                
+                if mapped_key and mapped_key in ASSET_CLASS_RECOMMENDATIONS:
+                    rec = ASSET_CLASS_RECOMMENDATIONS[mapped_key]
+                    
+                    # 현재 경기 사이클에 맞는 추천 가져오기
+                    cycle_rec = rec.get('cycle_recommendations', {}).get(phase, "시장 상황에 따라 조절")
+                    
+                    # ETF 목록 문자열 생성
+                    etfs = rec.get('etfs', [])
+                    etf_str = ", ".join([f"{e['ticker']}({e['name']})" for e in etfs[:3]])
+                    
+                    hover_text = (
+                        f"<b>{rec['icon']} {asset_name}</b><br>"
+                        f"<b>비중:</b> %{{percent}}<br><br>"
+                        f"<b>설명:</b> {rec['description']}<br><br>"
+                        f"<b>추천 ETF:</b><br>{etf_str}<br><br>"
+                        f"<b>{phase} 전략:</b><br>{cycle_rec}"
+                    )
+                    custom_data.append([rec['description'], etf_str, cycle_rec])
+                else:
+                    hover_text = f"<b>{asset_name}</b><br>비중: %{{percent}}"
+                    custom_data.append(["", "", ""])
+                
+                hover_texts.append(hover_text)
+            
+            fig = go.Figure(data=[go.Pie(
+                values=asset_values,
+                labels=asset_names,
                 hole=0.4,
-                color_discrete_sequence=px.colors.qualitative.Set3
+                hovertemplate="%{customdata[0]}<br><br><b>추천 ETF:</b><br>%{customdata[1]}<br><br><b>전략:</b> %{customdata[2]}<extra>%{label}: %{percent}</extra>",
+                customdata=custom_data,
+                textinfo='label+percent',
+                textfont=dict(size=12)
+            )])
+            
+            fig.update_layout(
+                title=dict(text=f"🔄 {phase} 추천 자산 배분", font=dict(size=16)),
+                height=400,
+                showlegend=True,
+                legend=dict(orientation="h", yanchor="bottom", y=-0.15),
+                annotations=[dict(
+                    text=f"<b>{phase}</b>",
+                    x=0.5, y=0.5,
+                    font_size=14,
+                    showarrow=False
+                )]
             )
-            fig.update_layout(height=350)
+            
             st.plotly_chart(fig, use_container_width=True)
+            
+            # 자산별 간단 설명 expander
+            with st.expander("💡 자산별 추천 상세보기"):
+                for asset_name in asset_names:
+                    # 매핑 찾기
+                    asset_key_map = {
+                        "주식": "주식", "주식형": "주식", "미국주식": "주식", "주식(미국)": "주식",
+                        "채권": "채권", "채권형": "채권", "국채": "채권", "회사채": "채권",
+                        "금": "금", "골드": "금", "금/원자재": "금",
+                        "현금": "현금", "현금성": "현금", "달러": "현금", "현금/달러": "현금",
+                        "원자재": "원자재", "커머디티": "원자재",
+                        "부동산": "부동산", "리츠": "부동산", "REITs": "부동산"
+                    }
+                    
+                    mapped_key = None
+                    for key, mapped in asset_key_map.items():
+                        if key in asset_name or asset_name in key:
+                            mapped_key = mapped
+                            break
+                    
+                    if mapped_key and mapped_key in ASSET_CLASS_RECOMMENDATIONS:
+                        rec = ASSET_CLASS_RECOMMENDATIONS[mapped_key]
+                        st.markdown(f"**{rec['icon']} {asset_name}** ({allocation.get(asset_name, 0)}%)")
+                        st.caption(f"└ {rec['description']}")
+                        
+                        etfs = rec.get('etfs', [])
+                        etf_str = " | ".join([f"`{e['ticker']}`" for e in etfs[:3]])
+                        st.caption(f"└ 추천 ETF: {etf_str}")
+                        
+                        cycle_rec = rec.get('cycle_recommendations', {}).get(phase, "")
+                        if cycle_rec:
+                            st.caption(f"└ {phase} 전략: {cycle_rec}")
+                        st.markdown("---")
     
     with col2:
         st.subheader("🏭 추천 섹터 및 대표 ETF")
