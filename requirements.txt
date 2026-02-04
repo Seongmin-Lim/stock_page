@@ -26,5 +26,6 @@ schedule>=1.2.0
 # 데이터 저장
 openpyxl>=3.1.0
 
-# 데이터베이스 (PostgreSQL 지원)
-psycopg2-binary>=2.9.9
+# 데이터베이스 (PostgreSQL 지원 - 선택적)
+# Streamlit Cloud에서 PostgreSQL 사용 시에만 필요
+# psycopg2-binary>=2.9.9

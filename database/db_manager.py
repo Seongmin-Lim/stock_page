@@ -16,16 +16,22 @@ from contextlib import contextmanager
 # 로컬: DATABASE_URL 없으면 SQLite 사용
 # 서버: DATABASE_URL=postgresql://user:pass@host:port/dbname
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
-USE_POSTGRES = DATABASE_URL.startswith("postgresql://") or DATABASE_URL.startswith("postgres://")
 
 # SQLite 기본 경로
 DB_PATH = os.path.join(os.path.dirname(__file__), "stock_app.db")
 
-# PostgreSQL 사용 시 psycopg2 임포트
-if USE_POSTGRES:
+# PostgreSQL 사용 여부 확인 및 psycopg2 임포트
+USE_POSTGRES = False
+psycopg2 = None
+RealDictCursor = None
+
+if DATABASE_URL.startswith("postgresql://") or DATABASE_URL.startswith("postgres://"):
     try:
-        import psycopg2
-        from psycopg2.extras import RealDictCursor
+        import psycopg2 as _psycopg2
+        from psycopg2.extras import RealDictCursor as _RealDictCursor
+        psycopg2 = _psycopg2
+        RealDictCursor = _RealDictCursor
+        USE_POSTGRES = True
         print("✅ PostgreSQL 모드로 실행")
     except ImportError:
         print("⚠️ psycopg2가 설치되지 않음, SQLite로 전환")
