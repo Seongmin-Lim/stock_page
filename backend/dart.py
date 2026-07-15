@@ -37,7 +37,10 @@ def _client():
     if not DART_API_KEY:
         return None
     try:
-        from opendartreader import OpenDartReader
+        try:
+            from opendartreader import OpenDartReader
+        except ImportError:
+            import OpenDartReader
 
         return OpenDartReader(DART_API_KEY)
     except Exception:  # noqa: BLE001
