@@ -176,20 +176,26 @@ def backtest(req: BacktestRequest) -> BacktestResult:
         position = (fast > slow).astype(float)
 
     pos_lag = position.shift(1).fillna(0.0)  # trade next bar — no look-ahead
-    turnover = pos_lag.diff().abs().fillna(0.0)
-    cost = turnover * (req.cost_bps / 10000.0)
+    trade_spans = _completed_trade_spans(pos_lag)
+    transaction_sides = pd.Series(0.0, index=pos_lag.index)
+    for entry_i, exit_i in trade_spans:
+        transaction_sides.iloc[entry_i] += 1.0
+        transaction_sides.iloc[exit_i] += 1.0
+    # cost_bps is round-trip cost, so each transaction side pays half.
+    cost = transaction_sides * (req.cost_bps / 20000.0)
     strat_ret = pos_lag * ret - cost
 
     equity = (1 + strat_ret).cumprod() * 100.0
     benchmark = (1 + ret).cumprod() * 100.0
 
     m = _metrics(equity)
-    trades = int((turnover > 0).sum())
-    # win rate over completed holding stretches (approx: positive strat-return days while in position)
-    in_pos = pos_lag > 0
-    win_rate = _pc((strat_ret[in_pos] > 0).mean()) if in_pos.any() else None
-
-    trades_list = _extract_trades(pos_lag, close)
+    trades_list = _build_trades(trade_spans, close, strat_ret)
+    trades = len(trades_list)
+    win_rate = (
+        _pc(sum(trade.ret_pct > 0 for trade in trades_list) / trades)
+        if trades
+        else None
+    )
 
     return BacktestResult(
         symbol=req.symbol,
@@ -205,41 +211,61 @@ def backtest(req: BacktestRequest) -> BacktestResult:
     )
 
 
-def _extract_trades(pos_lag: pd.Series, close: pd.Series) -> list[BtTrade]:
+def _completed_trade_spans(pos_lag: pd.Series) -> list[tuple[int, int]]:
+    """Pair long entries and exits, closing a final open position at the last bar."""
+    spans: list[tuple[int, int]] = []
+    entry_i: int | None = None
+    prev = 0.0
+    for i in range(len(pos_lag)):
+        cur = float(pos_lag.iloc[i])
+        if prev <= 0 and cur > 0:
+            entry_i = i
+        elif prev > 0 and cur <= 0 and entry_i is not None:
+            spans.append((entry_i, i))
+            entry_i = None
+        prev = cur
+    # An open final position counts as closed at the last bar for statistics.
+    if entry_i is not None:
+        spans.append((entry_i, len(pos_lag) - 1))
+    return spans
+
+
+def _build_trades(
+    trade_spans: list[tuple[int, int]],
+    close: pd.Series,
+    strat_ret: pd.Series,
+) -> list[BtTrade]:
     """Derive discrete long trades from position transitions (long-only strategies).
 
     Entry when pos_lag goes 0→>0 (buy at that bar's close), exit when >0→0 (sell at
     that bar's close). A position still open at the last bar is closed at the final
-    close. Only closed round-trips are returned; capped at the 50 most recent.
+    close. An open position at the end counts as one trade closed at the last bar
+    for statistics purposes. Returns compound the same net-of-cost daily returns
+    used by the equity curve.
     """
-    trades: list[BtTrade] = []
-    prev = 0.0
-    entry_idx: int | None = None
-    idx = list(pos_lag.index)
-    for i, ts in enumerate(idx):
-        cur = float(pos_lag.iloc[i])
-        if prev <= 0 and cur > 0:  # entry
-            entry_idx = i
-        elif prev > 0 and cur <= 0 and entry_idx is not None:  # exit
-            trades.append(_mk_trade(close, idx, entry_idx, i))
-            entry_idx = None
-        prev = cur
-    # still open at the end → close at last bar
-    if entry_idx is not None and entry_idx < len(idx) - 1:
-        trades.append(_mk_trade(close, idx, entry_idx, len(idx) - 1))
-    return trades[-50:]
+    idx: list[pd.Timestamp] = list(close.index)
+    return [
+        _mk_trade(close, strat_ret, idx, entry_i, exit_i)
+        for entry_i, exit_i in trade_spans
+    ]
 
 
-def _mk_trade(close: pd.Series, idx: list, entry_i: int, exit_i: int) -> BtTrade:
+def _mk_trade(
+    close: pd.Series,
+    strat_ret: pd.Series,
+    idx: list[pd.Timestamp],
+    entry_i: int,
+    exit_i: int,
+) -> BtTrade:
     ep = float(close.iloc[entry_i])
     xp = float(close.iloc[exit_i])
-    ret = (xp / ep - 1.0) * 100.0 if ep > 0 else 0.0
+    ret = float((1.0 + strat_ret.iloc[entry_i : exit_i + 1]).prod() - 1.0) * 100.0
     return BtTrade(
         entry_date=idx[entry_i].strftime("%Y-%m-%d"),
         exit_date=idx[exit_i].strftime("%Y-%m-%d"),
         entry_price=round(ep, 4),
         exit_price=round(xp, 4),
-        ret_pct=round(ret, 2),
+        ret_pct=ret,
     )
 
 
