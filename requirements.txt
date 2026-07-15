@@ -1,31 +1,16 @@
-# 웹 프레임워크
-streamlit>=1.32.0
-
-# 데이터 수집
-yfinance>=0.2.36
-pandas>=2.0.0
-numpy>=1.24.0
-requests>=2.31.0
-beautifulsoup4>=4.12.0
-
-# 시각화
-matplotlib>=3.7.0
-plotly>=5.18.0
-
-# AI API
-openai>=1.0.0
-anthropic>=0.18.0
-google-generativeai>=0.4.0
-
-# 환경 변수
-python-dotenv>=1.0.0
-
-# 스케줄링 (선택)
-schedule>=1.2.0
-
-# 데이터 저장
-openpyxl>=3.1.0
-
-# 데이터베이스 (PostgreSQL 지원 - 선택적)
-# Streamlit Cloud에서 PostgreSQL 사용 시에만 필요
-# psycopg2-binary>=2.9.9
+# AI_stockScope dependencies — all key-free data sources
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+pandas>=2.2
+numpy>=1.26
+scipy>=1.11
+pyarrow>=15.0
+yfinance>=0.2.40
+finance-datareader>=0.9.90
+pykrx>=1.0.45
+python-dotenv>=1.0
+# OpenDartReader 0.3.x requires Python>=3.13; 0.2.x works on 3.10-3.12
+OpenDartReader>=0.2.1
+google-genai>=0.3
+pytest>=8.0

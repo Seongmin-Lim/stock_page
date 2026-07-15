@@ -1,269 +1,105 @@
-# 📊 AI 기반 주식 분석 대시보드
+# AI_stockScope
 
-VIX, 10년 금리, S&P Forward P/E, 공포탐욕 지수, PER, PBR 등을 활용한 종합 주식 분석 도구입니다.  
-**Streamlit 웹 대시보드**와 **CLI 인터페이스**를 모두 지원합니다.
+무료·저(低)키 데이터로 동작하는 **로컬 웹 주식 분석 도구**. 브라우저에서 티커/종목명으로
+검색해 차트·기술지표·재무·밸류에이션·스크리너(자연어 포함)·AI 추천·산업 사이클·매매(포지션·저널)·
+관심/비교·포트폴리오·알림을 한 화면에서 본다. 한국(KOSPI/KOSDAQ) + 미국(NYSE/NASDAQ/S&P500) 지원.
 
-## 🌐 라이브 데모
+> 숫자는 코드가, 서술만 AI가 — 모든 점수·지표·필터는 **결정적 규칙 기반**이고,
+> Gemini는 (선택적으로) 사람이 읽을 서술 코멘트만 붙인다. 투자 권유가 아닌 참고용이다.
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://your-app-url.streamlit.app)
+## 빠른 실행 (원클릭)
 
-## 🚀 주요 기능
+`start_stock.bat` **더블클릭** → 최초 1회 자동으로 가상환경 생성·의존성 설치 → 서버 기동 →
+브라우저가 `http://127.0.0.1:8000` 으로 자동 진입. 8000번이 사용 중이면 8001~8010 중
+빈 포트로 자동 전환하고 그 주소로 브라우저를 연다.
 
-### 시장 분석
-- **VIX (변동성 지수)**: 시장 공포/안정 수준 측정
-- **10년 국채 금리**: 금리 환경 및 채권 시장 동향
-- **S&P 500 Forward P/E**: 시장 밸류에이션 수준
-- **공포탐욕 지수**: CNN Fear & Greed Index 및 자체 계산
-- **경기 사이클 분석**: 회복기/확장기/과열기/수축기/침체기 자동 판별
+> 필요 조건: **Python 3.10+** (설치 시 "Add Python to PATH" 체크). 인터넷 연결(데이터 조회).
 
-### 개별 주식 분석
-- **밸류에이션**: PER, PBR, PEG, PSR 등
-- **재무 지표**: 이익률, 성장률, ROE 등
-- **기술적 분석**: RSI, MACD, 볼린저밴드, 이동평균 등
-- **섹터 비교**: 동종 업계 평균과 비교
-
-### AI 분석 (5개 제공자 지원)
-- **Grok (xAI)**: 빠르고 비용 효율적, 한국어 우수
-- **Gemini (Google)**: 무료 티어 제공, 긴 컨텍스트
-- **OpenAI GPT**: GPT-4o 등 프리미엄 모델
-- **Anthropic Claude**: 복잡한 분석에 적합
-- **GitHub Models**: 10+ 모델 선택 (Llama, Phi, Mistral 등)
-
-### 포트폴리오 기능
-- 유명 투자자 포트폴리오 비교 (워렌 버핏, 레이 달리오 등)
-- 리밸런싱 계산기
-- 사용자 포트폴리오 관리
-
-## 📁 프로젝트 구조
-
-```
-stock_page/
-├── app.py                    # 🌐 Streamlit 웹 대시보드 (메인)
-├── main.py                   # CLI 메인 실행 파일
-├── interactive.py            # CLI 대화형 인터페이스
-├── requirements.txt          # 의존성
-├── .env.example              # 환경변수 예시
-│
-├── config/
-│   ├── settings.py           # 설정 및 API 키
-│   └── portfolio_data.py     # 유명 포트폴리오 데이터
-│
-├── data_collectors/
-│   ├── market_data.py        # VIX, 금리, S&P 500 데이터
-│   ├── fear_greed.py         # 공포탐욕 지수
-│   ├── stock_fundamentals.py # PER, PBR 등 기본적 분석
-│   ├── economic_cycle.py     # 경기 사이클 분석
-│   ├── economic_indicators.py# 경제 지표
-│   └── news_collector.py     # 뉴스 수집 및 감성 분석
-│
-├── analyzers/
-│   ├── ai_analyzer.py        # AI 기반 분석 (멀티 프로바이더)
-│   ├── technical_analyzer.py # 기술적 분석
-│   └── portfolio_analyzer.py # 포트폴리오 분석
-│
-├── ai_providers/
-│   ├── github_models.py      # GitHub Models API
-│   ├── ai_debate.py          # AI 토론 기능
-│   └── team_debate.py        # 팀 토론 기능
-│
-├── database/
-│   └── db_manager.py         # PostgreSQL DB 관리
-│
-├── utils/
-│   ├── helpers.py            # 유틸리티 함수
-│   ├── visualizer.py         # 차트 생성
-│   ├── rebalance_calculator.py # 리밸런싱 계산
-│   └── report_generator.py   # 리포트 생성
-│
-├── reports/                  # 분석 리포트 저장
-│   ├── daily/
-│   ├── market/
-│   ├── stocks/
-│   └── portfolio/
-│
-└── test_setup.py             # 설정 테스트
-```
-
-## 🛠️ 설치 방법
-
-### 1. 의존성 설치
+개발자용 실행:
 ```bash
 pip install -r requirements.txt
+python -m backend.server
 ```
 
-### 2. 환경 변수 설정
-`.env.example`을 `.env`로 복사하고 API 키를 입력하세요:
+## 탭 기능
+
+| 탭 | 내용 |
+|----|------|
+| 개요 | 현재가·등락·시총·PER·PBR·EPS·배당·52주 고저 + 규칙 기반 종합 진단 |
+| 차트 | 캔들+거래량, 이동평균·볼린저·EMA, MACD·RSI 서브패널, 기간/봉 선택, 차트 신호 읽기 |
+| 재무·밸류 | (US) 손익·재무상태·현금흐름 + 멀티플, (KR) **DART 상세 재무제표** + 파생 비율, 2단계 DCF |
+| 스크리너 | 규칙 필터(PER·PBR·ROE·시총·MA200·RSI·1년수익률·섹터) + **자연어 스크리닝**(문장 → 필터) |
+| AI 추천 | 4카테고리(대형 우량 모멘텀 / 저평가 우량 / 독보적 강소 / 턴어라운드) + **전 시장 스캔** |
+| 산업 사이클 | 테마별 4축(가격 모멘텀·이익·밸류·상대강도) 사이클 국면(회복·확장·둔화·침체) |
+| 매매 | **포지션 계산기**(R 기반 사이징·ATR/가격/% 손절) + **매매 저널**(P&L·R·승률·기대값) |
+| 관심·비교 | 워치리스트 저장, 정규화(시작=100) 수익률 비교, **관심종목 일일 브리핑** |
+| 포트폴리오 | 보유 입력 → 평가액·비중·수익률·CAGR·MDD·Sharpe + equity curve, 전략 백테스트(체결 내역 포함) |
+| 알림 | 가격·RSI·전일대비%·MA교차 조건 정의 후 점검 |
+
+## 데이터 소스
+
+| 용도 | KR | US |
+|------|----|----|
+| 검색/유니버스 | FinanceDataReader (KRX) | FinanceDataReader (NASDAQ/NYSE/AMEX/S&P500) |
+| OHLCV | FinanceDataReader (일봉→주/월 리샘플) | FinanceDataReader |
+| 시세/기초지표 | pykrx + FDR 스냅샷 | yfinance `.info` / `.fast_info` |
+| 재무제표 | **DART 전자공시**(OpenDartReader, 연결재무제표) | yfinance 손익/재무/현금흐름 |
+| 투자자 수급 | pykrx 외국인·기관 순매매 | — |
+
+데이터는 **지연/EOD**(실시간 아님)이며 스크래핑 기반이라 간헐 실패가 있을 수 있다. 모든 호출은
+`data/cache/`에 parquet+TTL로 캐시되어 두 번째부터 빠르다. 실패는 502/503 한국어 메시지로 처리된다.
+
+## API 키 (`.env`, git 제외)
+
+| 키 | 상태 | 역할 |
+|----|------|------|
+| `DART_API_KEY` | **활성** | KR 상세 재무제표(DART) — PER/PBR도 시총·순이익/자본에서 파생 |
+| `GEMINI_API_KEY` | **활성** | (선택) 서술 코멘트 레이어 — 숫자엔 관여 안 함 |
+| `KIWOOM_APP_KEY` / `KIWOOM_APP_SECRET` | 대기(미연동) | 실시간 시세·주문 연동 예정 |
+
+키가 없어도 앱은 동작한다(무키 소스로 degrade). `GET /api/health`로 활성 상태 확인.
+
+## AI 레이어 원칙 (숫자는 코드, 서술만 Gemini)
+
+Gemini는 다음 7곳에서 **서술만** 담당하며, 점수·필터·수치는 항상 코드가 결정한다:
+자연어 스크리닝(문장→필터), 종목 종합 진단 코멘트, 차트 신호 해석, 뉴스 요약·감성,
+DART 공시 요약, 관심종목 일일 브리핑, (추천/사이클의) 서술 코멘트.
+
+## 주요 엔드포인트
+
+- 시장데이터: `/api/search` · `/api/quote` · `/api/ohlcv` · `/api/indicators`
+- 진단·서술: `/api/analysis` · `/api/chartread` · `/api/news` · `/api/disclosures` · `/api/briefing`
+- 재무·밸류: `/api/fundamentals` · `POST /api/dcf`
+- 스크리너: `POST /api/screener` · `POST /api/nl-screen`
+- 추천·스캔: `/api/recommend` · **`/api/turnaround-scan?market=KR|US&limit=24`**
+- 사이클·수급: `/api/cycles` · `/api/flows` · **`/api/regime`**(지수 시황)
+- 매매: `POST /api/position` · `/api/journal` (GET/POST/DELETE)
+- 포트폴리오: `POST /api/portfolio` · `POST /api/backtest`(체결 내역 포함)
+- 관심·알림: `/api/watchlist` · `/api/compare` · `/api/alerts`
+- 상태: **`/api/health`**(dart/gemini/kiwoom 활성 여부)
+
+## 한계
+
+- 데이터는 **지연/EOD**, 스크래핑 기반이라 간헐 실패 가능(캐시로 완화).
+- **전 시장 턴어라운드 스캔은 최초 1회 수 분** 소요(수백 종목 2단계 분석) — 이후 12시간 캐시.
+- pykrx 기초지표(PER/PBR)는 자주 차단됨 → KR은 **DART 재무 + 시총에서 PER/PBR 파생**.
+- 실시간 스트리밍·옵션체인·키움 주문 연동은 후속.
+
+## 구조
+
+```
+backend/  server(FastAPI·라우팅·헬스·포트자동전환·캐시워밍업) · schema(pydantic 계약)
+          sources · cache · store · universe(검색·섹터) · indicators · fundamentals(DCF)
+          screener · nlscreen · recommend · scanner(전시장 스캔) · regime(시황)
+          cycles · flows · portfolio(비교·백테스트) · trade(포지션) · journal · alerts
+          analysis · chartread · news · disclosure · briefing · dart · llm · config · kiwoom
+frontend/ index.html · style.css(Apple) · app.js · vendor/lightweight-charts
+data/     캐시(parquet) + watchlist/portfolio/journal/alerts json (git 제외)
+tests/    test_indicators · test_valuation · test_trade · test_journal · test_reversal · test_nlscreen
+```
+
+## 테스트
 
 ```bash
-cp .env.example .env
+pytest tests/    # 지표·DCF·사이징·저널·리버설·자연어파서 순수함수 (네트워크 불필요)
 ```
-
-```env
-# .env 파일
-OPENAI_API_KEY=your_openai_api_key_here
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
-GOOGLE_API_KEY=your_gemini_api_key_here
-XAI_API_KEY=your_grok_api_key_here
-GITHUB_TOKEN=your_github_pat_here
-```
-
-## 📖 사용 방법
-
-### 🌐 웹 대시보드 (Streamlit) - 권장
-```bash
-streamlit run app.py
-```
-
-### CLI 대화형 모드
-```bash
-python interactive.py
-```
-
-### CLI 기본 실행
-```bash
-python main.py
-```
-
-### 코드에서 직접 사용
-```python
-from main import StockAnalyzer
-
-# 분석기 초기화 (AI 제공자 선택: grok, gemini, openai, anthropic, github)
-analyzer = StockAnalyzer(ai_provider="grok")
-
-# 경기 사이클 확인
-cycle = analyzer.get_economic_cycle()
-print(cycle)
-
-# 시장 현황 확인
-analyzer.print_market_summary()
-
-# 개별 주식 분석
-analyzer.print_stock_summary("AAPL")
-
-# AI 시장 분석
-analysis = analyzer.get_ai_market_analysis()
-print(analysis)
-
-# AI 주식 분석
-stock_analysis = analyzer.get_ai_stock_analysis("MSFT")
-print(stock_analysis)
-
-# 포트폴리오 추천
-recommendation = analyzer.get_portfolio_recommendation(
-    tickers=["AAPL", "MSFT", "GOOGL"],
-    risk_tolerance="moderate"
-)
-print(recommendation)
-```
-
-## 📊 분석 지표 설명
-
-### VIX (변동성 지수)
-| 수준 | 값 | 의미 |
-|------|-----|------|
-| 매우 낮음 | < 12 | 극도의 안정/자만 |
-| 낮음 | 12-17 | 낙관적 시장 |
-| 보통 | 17-22 | 정상 범위 |
-| 높음 | 22-30 | 불안정 |
-| 매우 높음 | > 30 | 공포 (역발상 기회) |
-
-### 공포탐욕 지수
-| 수준 | 값 | 역발상 전략 |
-|------|-----|------|
-| 극도의 공포 | 0-25 | 매수 기회 |
-| 공포 | 25-45 | 매수 고려 |
-| 중립 | 45-55 | 관망 |
-| 탐욕 | 55-75 | 매도 고려 |
-| 극도의 탐욕 | 75-100 | 매도 기회 |
-
-### 경기 사이클
-| 단계 | PER 조정 | 전략 |
-|------|----------|------|
-| 회복기 | ×0.9 | 성장주 비중 확대 |
-| 확장기 | ×1.0 | 균형 포트폴리오 |
-| 과열기 | ×1.1 | 방어주/현금 확대 |
-| 수축기 | ×0.85 | 채권/금 비중 확대 |
-| 침체기 | ×0.8 | 저점 매수 준비 |
-
-### PER (주가수익비율)
-- **< 15**: 저평가 가능
-- **15-20**: 적정 수준
-- **> 25**: 고평가 (성장주 제외)
-
-### PBR (주가순자산비율)
-- **< 1**: 청산가치 이하 (저평가)
-- **1-3**: 합리적 수준
-- **> 4**: 높은 프리미엄
-
----
-
-## ☁️ Streamlit Cloud 배포 방법
-
-### 1. GitHub 저장소 준비
-이미 GitHub에 푸시되어 있다면 바로 다음 단계로 이동하세요.
-
-### 2. Streamlit Cloud 접속
-1. [share.streamlit.io](https://share.streamlit.io) 접속
-2. GitHub 계정으로 로그인
-
-### 3. 새 앱 배포
-1. **"New app"** 클릭
-2. 설정 입력:
-   - **Repository**: `tjdal/stock_page` (본인 GitHub username/repo)
-   - **Branch**: `main`
-   - **Main file path**: `app.py` ← ⭐ 이것만 입력하면 됨!
-
-### 4. Secrets 설정 (중요!)
-배포 전 **"Advanced settings"** 클릭 후 Secrets에 API 키 입력:
-
-```toml
-# secrets.toml 형식
-OPENAI_API_KEY = "sk-..."
-ANTHROPIC_API_KEY = "sk-ant-..."
-GOOGLE_API_KEY = "AIza..."
-XAI_API_KEY = "xai-..."
-GITHUB_TOKEN = "ghp_..."
-
-# 앱 접근 비밀번호 (선택)
-APP_PASSWORD = "your_password"
-
-# PostgreSQL (선택)
-DATABASE_URL = "postgresql://..."
-```
-
-### 5. 배포
-**"Deploy!"** 버튼 클릭하면 자동 빌드 및 배포됩니다.
-
-### 📌 Main File Path 요약
-| 질문 | 답변 |
-|------|------|
-| Main file path에 뭘 입력? | **`app.py`** |
-| 전체 경로 필요? | ❌ 파일명만 입력 |
-| 왜 app.py? | Streamlit 대시보드가 여기에 있음 |
-
----
-
-## ⚠️ 주의사항
-
-1. **투자 조언이 아닙니다**: 이 프로그램은 정보 제공 목적이며, 투자 결정은 본인 책임입니다.
-2. **데이터 정확성**: 실시간 데이터는 지연될 수 있으며, 일부 지표는 추정치입니다.
-3. **API 비용**: AI 분석 기능은 API 호출 비용이 발생할 수 있습니다 (Gemini 무료 티어 제외).
-
-## 🧪 테스트
-
-```bash
-# 설정 및 데이터 수집 테스트
-python test_setup.py
-
-# 새 기능 테스트
-python test_new_features.py
-```
-
-## 📝 라이센스
-
-MIT License
-
-## 🤝 기여
-
-버그 리포트나 기능 제안은 Issue를 통해 제출해주세요.

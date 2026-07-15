@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI_stockScope</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <script src="/static/vendor/lightweight-charts.standalone.js"></script>
+</head>
+<body>
+  <header class="nav">
+    <div class="brand">stock<span class="dot">·</span>scope</div>
+    <div class="search-wrap">
+      <input id="search" class="search-input" type="text" autocomplete="off"
+             placeholder="티커 또는 종목명 검색  (예: 005930 · 삼성전자 · AAPL)" />
+      <div id="suggest" class="suggest"></div>
+    </div>
+    <div class="spacer"></div>
+    <div id="regime-bar" class="regime-bar" title="키 없는 무료 데이터 · 지연/EOD"></div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <span class="tab-group">
+      <span class="tab-group-label">발굴</span>
+      <button class="tab" data-tab="reco">AI추천</button>
+      <button class="tab" data-tab="screener">스크리너</button>
+      <button class="tab" data-tab="cycle">산업사이클</button>
+    </span>
+    <span class="tab-group">
+      <span class="tab-group-label">분석</span>
+      <button class="tab active" data-tab="overview">개요</button>
+      <button class="tab" data-tab="chart">차트</button>
+      <button class="tab" data-tab="fundamentals">재무·밸류</button>
+    </span>
+    <span class="tab-group">
+      <span class="tab-group-label">매매</span>
+      <button class="tab" data-tab="trade">매매</button>
+      <button class="tab" data-tab="alerts">알림</button>
+    </span>
+    <span class="tab-group">
+      <span class="tab-group-label">관리</span>
+      <button class="tab" data-tab="watch">관심·비교</button>
+      <button class="tab" data-tab="portfolio">포트폴리오</button>
+    </span>
+  </nav>
+
+  <main>
+    <!-- OVERVIEW -->
+    <section class="panel active" id="panel-overview">
+      <div id="overview-body">
+        <div class="empty">상단 검색창에서 종목을 선택하면 개요가 표시됩니다.</div>
+      </div>
+    </section>
+
+    <!-- CHART -->
+    <section class="panel" id="panel-chart">
+      <div class="card">
+        <div class="toolbar" id="chart-toolbar">
+          <span id="chart-title" style="font-weight:600"></span>
+          <span id="chart-levels-slot" class="row"></span>
+          <div class="spacer" style="flex:1"></div>
+          <span class="sep"></span>
+          <span class="row" id="period-pills"></span>
+          <span class="sep"></span>
+          <span class="row" id="interval-pills"></span>
+        </div>
+        <div class="toolbar" id="indicator-pills"></div>
+        <div id="chart" class="chart-box"></div>
+        <div id="legend" class="legend"></div>
+        <div id="chart-macd" class="chart-sub"></div>
+        <div id="chart-rsi" class="chart-sub"></div>
+      </div>
+      <div class="card" id="chartread-card"><h2>AI 차트 해석</h2>
+        <div id="chartread-body"><div class="empty">종목을 선택하면 기술적 신호 해석이 표시됩니다.</div></div>
+      </div>
+    </section>
+
+    <!-- FUNDAMENTALS -->
+    <section class="panel" id="panel-fundamentals">
+      <div id="fund-body">
+        <div class="empty">종목을 선택하면 재무·밸류에이션이 표시됩니다.</div>
+      </div>
+    </section>
+
+    <!-- SCREENER -->
+    <section class="panel" id="panel-screener">
+      <div class="card" id="nlscreen-card">
+        <h2>✦ 자연어로 찾기</h2>
+        <div class="note">말로 조건을 입력하면 AI가 스크리너로 변환합니다. 예: "PER 10 이하 ROE 15 이상 금융주", "저평가된 반도체", "과매도 + 200일선 위 종목"</div>
+        <div class="row mb" style="margin-top:12px">
+          <select id="nl-market" style="width:130px"><option value="KR">한국</option><option value="US">미국</option></select>
+          <input id="nl-query" placeholder="예: 저평가된 반도체 종목 찾아줘" style="flex:1;min-width:220px" />
+          <button class="btn" id="nl-run">찾기</button>
+        </div>
+        <div id="nl-result"></div>
+      </div>
+      <div class="card">
+        <h2>조건 스크리너</h2>
+        <div class="row mb">
+          <label class="field">시장
+            <select id="scr-market"><option value="KR">한국 (KOSPI/KOSDAQ)</option><option value="US">미국 (S&amp;P500)</option></select>
+          </label>
+          <label class="field">모드
+            <select id="scr-mode"><option value="hard">엄격 (AND)</option><option value="score">점수 랭킹</option></select>
+          </label>
+          <label class="field">개수<input id="scr-limit" type="number" value="50" style="width:80px" /></label>
+        </div>
+        <div id="scr-filters"></div>
+        <div class="row mb">
+          <button class="pill" id="scr-add">+ 조건 추가</button>
+          <button class="btn" id="scr-run">스크리닝 실행</button>
+        </div>
+        <div id="scr-result"></div>
+      </div>
+    </section>
+
+    <!-- AI RECOMMENDATION -->
+    <section class="panel" id="panel-reco">
+      <div class="card">
+        <div class="toolbar">
+          <h2 style="margin:0">AI 추천 — 멀티팩터 스코어</h2>
+          <div class="spacer" style="flex:1"></div>
+          <span class="row" id="reco-market">
+            <button class="pill active" data-m="KR">한국</button>
+            <button class="pill" data-m="US">미국</button>
+          </span>
+          <button class="btn" id="reco-run">추천 생성</button>
+        </div>
+        <div class="note">모멘텀·추세·가치·퀄리티·<b>재무(실제 재무제표)</b> 5개 팩터를 종합한 <b>규칙 기반 점수</b>로 큐레이션된 유명·강소 종목을 <b>분야(섹터)별로 분류</b>해 보여줍니다. 투자 권유가 아닌 참고용입니다.</div>
+        <div class="toolbar" id="reco-catbar" style="margin-top:12px"></div>
+        <div class="toolbar" id="reco-sectorbar"></div>
+      </div>
+      <div id="reco-body"></div>
+    </section>
+
+    <!-- INDUSTRY CYCLE -->
+    <section class="panel" id="panel-cycle">
+      <div class="card">
+        <div class="toolbar">
+          <h2 style="margin:0">산업 사이클 — 섹터 로테이션</h2>
+          <div class="spacer" style="flex:1"></div>
+          <span class="row" id="cycle-market">
+            <button class="pill active" data-m="KR">한국</button>
+            <button class="pill" data-m="US">미국</button>
+          </span>
+          <button class="btn" id="cycle-run">사이클 분석</button>
+        </div>
+        <div class="note">반도체·조선·2차전지·방산 등 산업 테마의 가격지수로 <b>사이클 국면</b>(🔵회복 → 🟢확장 → 🟡둔화 → 🔴침체)과 시장 대비 상대강도를 판정합니다. 가격 기반 휴리스틱·참고용.</div>
+      </div>
+      <div id="cycle-body"></div>
+    </section>
+
+    <!-- WATCH / COMPARE -->
+    <section class="panel" id="panel-watch">
+      <div class="card" id="brief-card">
+        <div class="toolbar"><h2 style="margin:0">✦ 관심종목 데일리 브리핑</h2>
+          <div class="spacer" style="flex:1"></div>
+          <button class="btn sec" id="brief-run">브리핑 생성</button></div>
+        <div id="brief-body"><div class="empty">'브리핑 생성'을 누르면 관심종목 전체를 AI가 한 눈에 정리합니다.</div></div>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <h2>관심 종목</h2>
+          <div class="row mb">
+            <button class="btn sec" id="watch-add">현재 종목 추가</button>
+            <button class="btn" id="watch-compare">선택 비교</button>
+          </div>
+          <div id="watch-list"></div>
+        </div>
+        <div class="card">
+          <h2>정규화 수익률 비교 (시작=100)</h2>
+          <div id="compare-chart" class="chart-box" style="height:340px"></div>
+          <div id="compare-legend" class="legend"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PORTFOLIO / BACKTEST -->
+    <section class="panel" id="panel-portfolio">
+      <div class="card">
+        <h2>포트폴리오 분석</h2>
+        <div id="port-holdings"></div>
+        <div class="row mb">
+          <button class="pill" id="port-add">+ 보유 종목</button>
+          <button class="btn" id="port-run">분석</button>
+        </div>
+        <div id="port-result"></div>
+      </div>
+      <div class="card">
+        <h2>전략 백테스트</h2>
+        <div class="row mb">
+          <label class="field">종목<input id="bt-symbol" placeholder="005930 / AAPL" style="width:130px" /></label>
+          <label class="field">전략
+            <select id="bt-strategy">
+              <option value="ma_cross">이동평균 교차</option>
+              <option value="rsi_revert">RSI 평균회귀</option>
+              <option value="buy_hold">바이앤홀드</option>
+            </select>
+          </label>
+          <label class="field">단기<input id="bt-fast" type="number" value="20" style="width:70px" /></label>
+          <label class="field">장기<input id="bt-slow" type="number" value="60" style="width:70px" /></label>
+          <label class="field">기간
+            <select id="bt-period"><option>3y</option><option>5y</option><option>1y</option><option>10y</option></select>
+          </label>
+          <button class="btn" id="bt-run" style="align-self:flex-end">실행</button>
+        </div>
+        <div id="bt-result"></div>
+      </div>
+    </section>
+
+    <!-- ALERTS -->
+    <section class="panel" id="panel-alerts">
+      <div class="card">
+        <h2>알림 규칙</h2>
+        <div class="row mb">
+          <label class="field">종목<input id="al-symbol" placeholder="005930 / AAPL" style="width:130px" /></label>
+          <label class="field">지표
+            <select id="al-metric">
+              <option value="price">가격</option>
+              <option value="rsi">RSI</option>
+              <option value="pct_change">전일대비 %</option>
+              <option value="ma_cross">MA 교차</option>
+            </select>
+          </label>
+          <label class="field">조건
+            <select id="al-op">
+              <option value="gt">초과(&gt;)</option>
+              <option value="lt">미만(&lt;)</option>
+              <option value="cross_up">골든크로스</option>
+              <option value="cross_down">데드크로스</option>
+            </select>
+          </label>
+          <label class="field">값<input id="al-value" type="number" style="width:110px" /></label>
+          <button class="btn" id="al-add" style="align-self:flex-end">추가</button>
+          <button class="btn sec" id="al-check" style="align-self:flex-end">전체 점검</button>
+        </div>
+        <div id="al-list"></div>
+      </div>
+    </section>
+
+    <!-- TRADE (position sizing + journal) -->
+    <section class="panel" id="panel-trade">
+      <div class="card">
+        <h2>포지션 사이징 · 손절/목표 계산기</h2>
+        <div class="note">계좌의 일정 % 만 리스크(1R)로 잡고 손절폭으로 수량을 역산합니다. 트레이더의 첫 규칙: 먼저 잃을 금액을 정한다.</div>
+        <div class="row mb" style="margin-top:12px">
+          <label class="field">종목(선택)<input id="ps-symbol" placeholder="005930 / AAPL" style="width:130px" /></label>
+          <label class="field">계좌 크기<input id="ps-account" type="number" value="10000000" style="width:140px" /></label>
+          <label class="field">리스크 %<input id="ps-risk" type="number" step="0.1" value="1" style="width:80px" /></label>
+          <label class="field">방향
+            <select id="ps-dir"><option value="long">매수(long)</option><option value="short">매도(short)</option></select>
+          </label>
+        </div>
+        <div class="row mb">
+          <label class="field">진입가(선택=현재가)<input id="ps-entry" type="number" placeholder="현재가 자동" style="width:140px" /></label>
+          <label class="field">손절 방식
+            <select id="ps-mode">
+              <option value="atr">ATR 배수</option>
+              <option value="pct">진입가 대비 %</option>
+              <option value="price">손절가 직접</option>
+            </select>
+          </label>
+          <label class="field" id="ps-atr-wrap">ATR 배수<input id="ps-atr" type="number" step="0.1" value="2" style="width:80px" /></label>
+          <label class="field" id="ps-pct-wrap" style="display:none">손절 %<input id="ps-pct" type="number" step="0.5" value="7" style="width:80px" /></label>
+          <label class="field" id="ps-price-wrap" style="display:none">손절가<input id="ps-stop" type="number" style="width:120px" /></label>
+          <label class="field">목표 R:R<input id="ps-rr" type="number" step="0.5" value="2" style="width:80px" /></label>
+          <button class="btn" id="ps-run" style="align-self:flex-end">계산</button>
+        </div>
+        <div id="ps-result"></div>
+      </div>
+
+      <div class="card">
+        <h2>트레이드 저널 · 매매일지</h2>
+        <div id="journal-stats"></div>
+        <div class="row mb" style="margin-top:12px">
+          <label class="field">종목<input id="tj-symbol" placeholder="005930 / AAPL" style="width:120px" /></label>
+          <label class="field">방향
+            <select id="tj-dir"><option value="long">매수</option><option value="short">매도</option></select>
+          </label>
+          <label class="field">진입일<input id="tj-edate" type="date" style="width:140px" /></label>
+          <label class="field">진입가<input id="tj-eprice" type="number" style="width:110px" /></label>
+          <label class="field">수량<input id="tj-shares" type="number" style="width:90px" /></label>
+          <label class="field">손절가<input id="tj-stop" type="number" style="width:110px" /></label>
+        </div>
+        <div class="row mb">
+          <label class="field">청산일(선택)<input id="tj-xdate" type="date" style="width:140px" /></label>
+          <label class="field">청산가(선택)<input id="tj-xprice" type="number" style="width:110px" /></label>
+          <label class="field" style="flex:1">셋업/메모<input id="tj-setup" placeholder="진입 근거 (예: 200일선 돌파)" style="width:100%" /></label>
+          <button class="btn" id="tj-add" style="align-self:flex-end">기록 추가</button>
+        </div>
+        <div id="journal-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toasts" id="toasts"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
