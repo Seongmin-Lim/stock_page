@@ -8,11 +8,12 @@ working key-free. Used to (a) fill the KR fundamentals tab with real statements 
 from __future__ import annotations
 
 import re
+from typing import TypedDict
 
 import pandas as pd
 
+from backend import config
 from backend.cache import cache_json
-from backend.config import DART_API_KEY
 
 _DART_TTL = 60 * 60 * 24 * 7  # 7 days — annual statements rarely change
 
@@ -33,8 +34,13 @@ _BALANCE = {
 }
 
 
+class DisclosureFetch(TypedDict):
+    ok: bool
+    rows: list[dict[str, str]]
+
+
 def _client():
-    if not DART_API_KEY:
+    if not config.has_dart():
         return None
     try:
         try:
@@ -42,30 +48,34 @@ def _client():
         except ImportError:
             import OpenDartReader
 
-        return OpenDartReader(DART_API_KEY)
+        return OpenDartReader(config.DART_API_KEY)
     except Exception:  # noqa: BLE001
         return None
 
 
-def recent_disclosures(symbol: str, days: int = 120, limit: int = 15) -> list[dict]:
-    """Recent DART filings for a KR stock: [{date, report, rcept_no}]. Cached, key-free-safe."""
+def recent_disclosures(
+    symbol: str, days: int = 120, limit: int = 15
+) -> DisclosureFetch:
+    """Return the status and rows from a cached recent-filings request."""
 
-    def produce() -> list[dict]:
+    def produce() -> DisclosureFetch:
         from datetime import datetime, timedelta
 
+        if not config.has_dart():
+            return {"ok": False, "rows": []}
         dart = _client()
         if dart is None:
-            return []
+            return {"ok": False, "rows": []}
         start = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
         try:
             dl = dart.list(
                 symbol, start=start
             )  # no kind → 전체(정기·주요사항·지분·발행 등)
         except Exception:  # noqa: BLE001
-            return []
+            return {"ok": False, "rows": []}
         if dl is None or len(dl) == 0:
-            return []
-        rows: list[dict] = []
+            return {"ok": True, "rows": []}
+        rows: list[dict[str, str]] = []
         for _, r in dl.head(limit).iterrows():
             rows.append(
                 {
@@ -74,9 +84,9 @@ def recent_disclosures(symbol: str, days: int = 120, limit: int = 15) -> list[di
                     "rcept_no": str(r.get("rcept_no", "")),
                 }
             )
-        return rows
+        return {"ok": True, "rows": rows}
 
-    return cache_json(f"dart-list:{symbol}", 3600, produce)
+    return cache_json(f"dart-list2:{symbol}", 3600, produce)
 
 
 def _to_num(v: object) -> float | None:

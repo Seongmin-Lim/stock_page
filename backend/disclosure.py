@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from backend import config
 from backend.schema import DisclosureItem, DisclosureSummary
 from backend.sources import detect_market
 from backend.universe import name_of
@@ -43,14 +44,26 @@ def get_disclosures(symbol: str) -> DisclosureSummary:
 
     from backend.dart import recent_disclosures
 
-    raw = recent_disclosures(symbol)
-    if not raw:
+    result = recent_disclosures(symbol)
+    raw = result["rows"]
+    if not config.has_dart():
+        note = (
+            "DART API 키가 설정되지 않아 공시를 불러올 수 없습니다"
+            "(.env의 DART_API_KEY 참고)."
+        )
+    elif not result["ok"]:
+        note = "DART 공시 조회가 일시적으로 실패했습니다. 잠시 후 다시 시도해주세요."
+    elif not raw:
+        note = "최근 120일 내 공시가 없습니다."
+    else:
+        note = None
+    if note is not None:
         return DisclosureSummary(
             symbol=symbol,
             name=name,
             market=market,
             generated=datetime.now().strftime("%Y-%m-%d %H:%M"),
-            note="최근 공시를 불러오지 못했습니다(DART 키 미설정 또는 공시 없음).",
+            note=note,
         )
 
     llm_summary, tags = _llm_summary(name, raw)

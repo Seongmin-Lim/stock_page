@@ -14,6 +14,7 @@ from threading import Lock
 import numpy as np
 import pandas as pd
 
+from backend import config
 from backend.cache import cache_df, cache_json
 from backend.schema import Bar, FinancialRow, Fundamentals, OHLCVResponse, Quote
 
@@ -419,7 +420,13 @@ def get_fundamentals(symbol: str) -> Fundamentals:
 
     note = "재무제표는 DART 전자공시(연결재무제표 CFS) 기준입니다."
     if fin_year is None:
-        note = "DART 재무제표를 불러오지 못했습니다(키 미설정 또는 일시 오류). 기초지표만 표시합니다."
+        if config.has_dart():
+            note = "DART 재무제표를 일시적으로 불러오지 못했습니다. 기초지표만 표시합니다."
+        else:
+            note = (
+                "DART API 키가 설정되지 않아 재무제표를 불러올 수 없습니다"
+                "(.env의 DART_API_KEY 참고). 기초지표만 표시합니다."
+            )
     return Fundamentals(
         symbol=symbol,
         name=(str(row["name"]) if row is not None else name_of(symbol)),
