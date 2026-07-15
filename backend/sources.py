@@ -243,7 +243,7 @@ def _quote_us(symbol: str) -> Quote:
         per=_f(info.get("trailingPE")),
         pbr=_f(info.get("priceToBook")),
         eps=_f(info.get("trailingEps")),
-        div_yield=_pct(info.get("dividendYield")),
+        div_yield=_div_yield_pct(info),
         w52_high=_f(info.get("fiftyTwoWeekHigh")),
         w52_low=_f(info.get("fiftyTwoWeekLow")),
         updated=datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -319,7 +319,7 @@ def get_fundamentals(symbol: str) -> Fundamentals:
             "ROE": _pct(info.get("returnOnEquity")),
             "ROA": _pct(info.get("returnOnAssets")),
             "OperatingMargin": _pct(info.get("operatingMargins")),
-            "DividendYield": _pct(info.get("dividendYield")),
+            "DividendYield": _div_yield_pct(info),
         }
         return Fundamentals(
             symbol=symbol,
@@ -416,3 +416,9 @@ def _pct(v: object) -> float | None:
     """yfinance returns ratios (0.23) for margins/yield → express as percent."""
     f = _f(v)
     return None if f is None else f * 100.0
+
+
+def _div_yield_pct(info: dict[str, object]) -> float | None:
+    # dividendYield became percent in yfinance >=1.5; trailingAnnualDividendYield stayed a ratio.
+    trailing = info.get("trailingAnnualDividendYield")
+    return _pct(trailing) if trailing is not None else _f(info.get("dividendYield"))
