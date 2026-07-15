@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta
+from threading import Lock
 
 import numpy as np
 import pandas as pd
 
-from backend.cache import cache_df
+from backend.cache import cache_df, cache_json
 from backend.schema import Bar, FinancialRow, Fundamentals, OHLCVResponse, Quote
 
 _KR_CODE = re.compile(r"^\d{6}$")
@@ -30,6 +31,9 @@ _PERIOD_DAYS = {
     "max": 8000,
 }
 _RESAMPLE = {"1wk": "W-FRI", "1mo": "ME"}
+_KR_FUND_SNAPSHOTS: dict[str, pd.DataFrame] = {}
+_KR_FUND_LOCK = Lock()
+_US_INFO_TTL = 6 * 3600
 
 
 def detect_market(symbol: str) -> str:
@@ -147,14 +151,37 @@ def kr_listing_snapshot() -> pd.DataFrame:
     return cache_df("kr_snapshot", ttl_sec=1800, producer=produce)
 
 
+def _kr_fundamental_snapshot(market: str, business_day: str) -> pd.DataFrame:
+    """Return one cached full-market pykrx fundamental frame per business day."""
+    key = f"krx_fund:{market}:{business_day}"
+    with _KR_FUND_LOCK:
+        if key in _KR_FUND_SNAPSHOTS:
+            return _KR_FUND_SNAPSHOTS[key]
+
+        def produce() -> pd.DataFrame:
+            try:
+                from pykrx import stock
+
+                frame = stock.get_market_fundamental_by_ticker(
+                    business_day, market=market
+                )
+                return frame if frame is not None else pd.DataFrame()
+            except Exception:  # noqa: BLE001 - KRX endpoint frequently blocked
+                return pd.DataFrame()
+
+        frame = cache_df(key, ttl_sec=24 * 3600, producer=produce)
+        _KR_FUND_SNAPSHOTS[key] = frame
+        return frame
+
+
 def _kr_fundamentals(symbol: str) -> dict[str, float | None]:
-    """Best-effort PER/PBR/EPS/BPS/DIV via pykrx. Returns empty dict if KRX is down."""
+    """Best-effort PER/PBR/EPS/BPS/DIV lookup. Returns empty if KRX is down."""
     try:
         from pykrx import stock
 
         bd = stock.get_nearest_business_day_in_a_week()
         for mkt in ("KOSPI", "KOSDAQ"):
-            fund = stock.get_market_fundamental_by_ticker(bd, market=mkt)
+            fund = _kr_fundamental_snapshot(mkt, bd)
             if symbol in fund.index:
                 r = fund.loc[symbol]
                 return {
@@ -168,6 +195,22 @@ def _kr_fundamentals(symbol: str) -> dict[str, float | None]:
     except Exception:  # noqa: BLE001 - KRX fundamental endpoint frequently blocked
         pass
     return {}
+
+
+def get_us_info(symbol: str) -> dict[str, object]:
+    """Return cached yfinance ``Ticker.info`` data for one symbol."""
+
+    def produce() -> dict[str, object]:
+        try:
+            import yfinance as yf
+
+            info = yf.Ticker(symbol).info or {}
+            return info if isinstance(info, dict) else {}
+        except Exception:  # noqa: BLE001 - yfinance metadata is best-effort
+            return {}
+
+    data = cache_json(f"us_info:{symbol}", ttl_sec=_US_INFO_TTL, producer=produce)
+    return data if isinstance(data, dict) else {}
 
 
 # ── quote ────────────────────────────────────────────────────────────

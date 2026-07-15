@@ -15,6 +15,7 @@ industry is leading the rotation. NO LLM, NO API key — just FDR OHLCV + arithm
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 import pandas as pd
@@ -70,16 +71,24 @@ def _ret(close: pd.Series, days: int) -> float | None:
     return float(close.iloc[-1] / close.iloc[-days - 1] - 1.0) * 100.0
 
 
-def _theme_index(members: list[str]) -> pd.Series:
+def _theme_index(members: list[str], max_workers: int = 5) -> pd.Series:
     """Equal-weight, normalized-to-100 price index across the basket (inner-joined dates)."""
-    cols = {}
-    for sym in members:
-        try:
-            df = get_ohlcv_df(sym, "2y", "1d")
-            if not df.empty and len(df) >= 60:
-                cols[sym] = df["Close"]
-        except Exception:  # noqa: BLE001
-            continue
+    frames: dict[str, pd.DataFrame] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(get_ohlcv_df, sym, "2y", "1d"): sym for sym in members
+        }
+        for future in as_completed(futures):
+            sym = futures[future]
+            try:
+                frames[sym] = future.result()
+            except Exception:  # noqa: BLE001
+                continue
+    cols = {
+        sym: frames[sym]["Close"]
+        for sym in members
+        if sym in frames and not frames[sym].empty and len(frames[sym]) >= 60
+    }
     if not cols:
         return pd.Series(dtype=float)
     px = pd.DataFrame(cols).dropna()
@@ -141,18 +150,29 @@ def _price_score(c: dict) -> float:
     return max(0.0, min(100.0, base))
 
 
-def _theme_fundamentals(members: list[str], market: str) -> dict:
+def _theme_fundamentals(
+    members: list[str], market: str, max_workers: int = 5
+) -> dict:
     """Aggregate member fundamentals → earnings-momentum & valuation axes (reuses _metrics)."""
     import backend.recommend as R
     from backend.sources import kr_listing_snapshot
 
     snap = kr_listing_snapshot() if market == "KR" else None
+    metrics: dict[str, dict[str, float | None] | None] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(R._metrics, sym, market, snap): sym for sym in members
+        }
+        for future in as_completed(futures):
+            sym = futures[future]
+            try:
+                metrics[sym] = future.result()
+            except Exception:  # noqa: BLE001
+                metrics[sym] = None
+
     rev, opm, per, pbr = [], [], [], []
     for sym in members:
-        try:
-            m = R._metrics(sym, market, snap)
-        except Exception:  # noqa: BLE001
-            m = None
+        m = metrics.get(sym)
         if not m:
             continue
         if m.get("rev_growth") is not None:
@@ -241,32 +261,40 @@ def _fund_note(f: dict) -> str:
     return " · ".join(parts) if parts else "재무 데이터 제한"
 
 
-def _leaders(members: list[str], market: str) -> list[str]:
+def _leaders(members: list[str], market: str, max_workers: int = 5) -> list[str]:
     from backend.universe import name_of
 
+    frames: dict[str, pd.DataFrame] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(get_ohlcv_df, sym, "1y", "1d"): sym for sym in members
+        }
+        for future in as_completed(futures):
+            sym = futures[future]
+            try:
+                frames[sym] = future.result()
+            except Exception:  # noqa: BLE001
+                continue
     scored: list[tuple[float, str]] = []
     for sym in members:
-        try:
-            df = get_ohlcv_df(sym, "1y", "1d")
-            if not df.empty and len(df) >= 63:
-                scored.append((_ret(df["Close"], 63) or -999, name_of(sym)))
-        except Exception:  # noqa: BLE001
-            continue
+        df = frames.get(sym)
+        if df is not None and not df.empty and len(df) >= 63:
+            scored.append((_ret(df["Close"], 63) or -999, name_of(sym)))
     scored.sort(reverse=True)
     return [n for _, n in scored[:3]]
 
 
-def _build(market: str) -> dict:
+def _build(market: str, max_workers: int = 5) -> dict:
     bench_close = get_ohlcv_df(_BENCH[market], "2y", "1d")
     bench_ret_3m = _ret(bench_close["Close"], 63) if not bench_close.empty else None
 
     themes: list[CycleTheme] = []
     for key, name, members in _THEMES[market]:
-        idx = _theme_index(members)
+        idx = _theme_index(members, max_workers=max_workers)
         if idx.empty or len(idx) < 60:
             continue
         c = _classify(idx, bench_ret_3m)
-        f = _theme_fundamentals(members, market)
+        f = _theme_fundamentals(members, market, max_workers=max_workers)
         price_s = _price_score(c)
         label, emoji = _PHASE[c["phase"]]
         curve = [
@@ -293,7 +321,7 @@ def _build(market: str) -> dict:
                 avg_op_margin=_r(f.get("avg_op_margin")),
                 avg_rev_growth=_r(f.get("avg_rev_growth")),
                 score=_composite_score(price_s, f),
-                leaders=_leaders(members, market),
+                leaders=_leaders(members, market, max_workers=max_workers),
                 index_curve=curve,
                 comment=_comment(name, c, f),
                 fund_note=_fund_note(f),

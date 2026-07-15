@@ -18,6 +18,7 @@ in the CRITERIA / MOMENTUM_MIX / STAGE_POINTS / _WEIGHTS blocks below; edit thos
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 import pandas as pd
@@ -368,9 +369,9 @@ def _sane_all(per, pbr, roe, margin):  # noqa: ANN001 - tuple in/out of floats|N
 # ── per-symbol metrics ───────────────────────────────────────────────
 def _us_fundamentals(symbol: str) -> dict[str, float | None]:
     try:
-        import yfinance as yf
+        from backend.sources import get_us_info
 
-        info = yf.Ticker(symbol).info or {}
+        info = get_us_info(symbol)
         roe = _f(info.get("returnOnEquity"))
         margin = _f(info.get("profitMargins"))
         growth = _f(info.get("revenueGrowth"))
@@ -687,10 +688,30 @@ def _group_by_sector(
     return groups
 
 
-def _build(market: str) -> dict:
+def _build(market: str, max_workers: int = 5) -> dict:
     from backend.universe import sector_of
 
     kr_snap = kr_listing_snapshot() if market == "KR" else pd.DataFrame()
+    symbols = list(
+        dict.fromkeys(
+            symbol
+            for _, universe in _BUCKETS[market]
+            for symbol in universe
+        )
+    )
+    metrics: dict[str, dict[str, float | None] | None] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_metrics, symbol, market, kr_snap): symbol
+            for symbol in symbols
+        }
+        for future in as_completed(futures):
+            symbol = futures[future]
+            try:
+                metrics[symbol] = future.result()
+            except Exception:  # noqa: BLE001 - batch builds skip failed symbols
+                metrics[symbol] = None
+
     categories: list[dict] = []
     for key, universe in _BUCKETS[market]:
         is_turn = key == "turnaround"
@@ -698,7 +719,7 @@ def _build(market: str) -> dict:
             wm, wt, wv, wq, wf = _WEIGHTS[key]
         picks: list[RecoPick] = []
         for symbol, name in universe.items():
-            m = _metrics(symbol, market, kr_snap)
+            m = metrics.get(symbol)
             if m is None:
                 continue
             if is_turn:

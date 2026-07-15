@@ -18,6 +18,7 @@ cache serves any limit ≤ stored. The first scan can take several minutes.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 import pandas as pd
@@ -105,16 +106,26 @@ def _stage1_pool(market: str, kr_snap: pd.DataFrame) -> list[str]:
     return [str(s) for s in snap["symbol"].tolist()]
 
 
-def _build(market: str) -> dict:
+def _build(market: str, max_workers: int = 5) -> dict:
     kr_snap = kr_listing_snapshot() if market == "KR" else pd.DataFrame()
     pool = _stage1_pool(market, kr_snap)
     pool_n = len(pool)
 
     # ── stage 1: rank the pool by reversal score (price-only) ─────────
+    stage1: dict[str, dict[str, float | bool | None] | None] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_reversal_inputs, sym): sym for sym in pool}
+        for future in as_completed(futures):
+            sym = futures[future]
+            try:
+                stage1[sym] = future.result()
+            except Exception:  # noqa: BLE001 - batch builds skip failed symbols
+                stage1[sym] = None
+
     ranked: list[tuple[str, float]] = []
     scanned = 0
     for sym in pool:
-        inp = _reversal_inputs(sym)
+        inp = stage1.get(sym)
         if inp is None:
             continue
         scanned += 1
@@ -134,9 +145,21 @@ def _build(market: str) -> dict:
     finalists = [sym for sym, _ in ranked[:_FINALISTS]]
 
     # ── stage 2: full fundamentals for finalists only ────────────────
+    stage2: dict[str, dict[str, float | None] | None] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_metrics, sym, market, kr_snap): sym for sym in finalists
+        }
+        for future in as_completed(futures):
+            sym = futures[future]
+            try:
+                stage2[sym] = future.result()
+            except Exception:  # noqa: BLE001 - batch builds skip failed symbols
+                stage2[sym] = None
+
     picks: list[RecoPick] = []
     for sym in finalists:
-        m = _metrics(sym, market, kr_snap)
+        m = stage2.get(sym)
         if m is None:
             continue
         tw = TURNAROUND_WEIGHTS

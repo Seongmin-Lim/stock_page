@@ -184,9 +184,9 @@ def sector_of(symbol: str, market: str) -> str:
     if market == "KR":
         return _kr_sectors().get(symbol, "기타")
     try:
-        import yfinance as yf
+        from backend.sources import get_us_info
 
-        info = yf.Ticker(symbol).info or {}
+        info = get_us_info(symbol)
         sec = info.get("sector") or ""
         return US_SECTOR_KO.get(sec, sec or "기타")
     except Exception:  # noqa: BLE001
