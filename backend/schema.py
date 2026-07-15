@@ -5,7 +5,9 @@ Every API request/response is typed here. No `Any`/`dict` leakage across the bou
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, Field, model_validator
 
 Market = str  # "KR" | "US"
 
@@ -115,20 +117,52 @@ class DCFResult(BaseModel):
 
 
 # ── screener ─────────────────────────────────────────────────────────
+ScreenField = Literal[
+    "per",
+    "pbr",
+    "roe",
+    "div",
+    "marketcap",
+    "price",
+    "change_pct",
+    "above_ma200",
+    "rsi",
+    "ret_1y",
+]
+ScreenOp = Literal["lt", "lte", "gt", "gte", "between", "true"]
+
+
 class ScreenFilter(BaseModel):
-    field: str  # "per", "pbr", "roe", "above_ma200", "rsi", ...
-    op: str  # "lt" | "lte" | "gt" | "gte" | "between" | "true"
+    field: ScreenField
+    op: ScreenOp
     value: float | None = None
     value2: float | None = None
     weight: float = 1.0
 
+    @model_validator(mode="after")
+    def validate_operator_values(self) -> ScreenFilter:
+        if self.op == "true":
+            if self.field != "above_ma200":
+                raise ValueError("true 연산자는 불리언 필드에만 사용할 수 있습니다.")
+            if self.value is not None and self.value not in (0.0, 1.0):
+                raise ValueError("true 연산자의 값은 0 또는 1이어야 합니다.")
+            return self
+        if self.value is None:
+            raise ValueError("필터 값이 필요합니다.")
+        if self.op == "between":
+            if self.value2 is None:
+                raise ValueError("between 연산자는 하한과 상한이 필요합니다.")
+            if self.value > self.value2:
+                raise ValueError("between 하한은 상한보다 클 수 없습니다.")
+        return self
+
 
 class ScreenSpec(BaseModel):
-    market: Market = "KR"
-    mode: str = "hard"  # "hard" (AND) | "score" (weighted rank)
+    market: Literal["KR", "US"] = "KR"
+    mode: Literal["hard", "score"] = "hard"
     filters: list[ScreenFilter] = Field(default_factory=list)
     sector: str | None = None  # optional broad-sector filter (e.g. "반도체·전자")
-    limit: int = 50
+    limit: int = Field(default=50, ge=1, le=100)
 
 
 class NLScreenRequest(BaseModel):
@@ -151,6 +185,7 @@ class ScreenRow(BaseModel):
     per: float | None = None
     pbr: float | None = None
     roe: float | None = None
+    div: float | None = None
     score: float | None = None
 
 

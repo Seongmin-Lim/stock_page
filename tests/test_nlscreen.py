@@ -59,6 +59,21 @@ def test_sanitize_clamps_limit_low():
     assert spec.limit == 1
 
 
+def test_sanitize_drops_filters_with_invalid_value_shapes():
+    spec = _sanitize(
+        {
+            "filters": [
+                {"field": "per", "op": "between", "value": 5},
+                {"field": "per", "op": "true"},
+                {"field": "above_ma200", "op": "true"},
+            ]
+        },
+        "KR",
+    )
+
+    assert [(f.field, f.op) for f in spec.filters] == [("above_ma200", "true")]
+
+
 def test_interpret_renders_korean_labels():
     spec = _sanitize(
         {

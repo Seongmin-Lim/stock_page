@@ -2,9 +2,9 @@
 
 Three tiers of fields:
   • cheap  (whole-market, instant): price, marketcap, change_pct — from the FDR snapshot.
-  • fundamental (per-candidate): per, pbr, roe — computed for a *capped* candidate pool.
+  • fundamental (per-candidate): per, pbr, roe, div — computed for a *capped* candidate pool.
       KR  → from DART statements + market cap  (PER=시총/순이익, PBR=시총/자본, ROE=순이익/자본).
-            This bypasses the often-blocked pykrx ratio endpoint entirely.
+            Dividend yield comes from the cached pykrx fundamental snapshot's DIV column.
       US  → from yfinance .info (trailingPE / priceToBook / returnOnEquity).
   • technical (per-candidate): above_ma200, rsi, ret_1y — from cached OHLCV.
 
@@ -22,13 +22,13 @@ from backend.cache import cache_df
 from backend.indicators import rsi as rsi_series
 from backend.indicators import sma
 from backend.schema import ScreenFilter, ScreenResult, ScreenRow, ScreenSpec
-from backend.sources import _f, get_ohlcv_df
+from backend.sources import _div_yield_pct, _f, get_ohlcv_df
 
 _SNAP_TTL = 60 * 60 * 12
 _POOL_CAP = 120  # max candidates to compute per-stock fundamentals/technicals for
 
 _CHEAP_FIELDS = {"marketcap", "price", "change_pct"}
-_FUNDAMENTAL_FIELDS = {"per", "pbr", "roe"}
+_FUNDAMENTAL_FIELDS = {"per", "pbr", "roe", "div"}
 _TECHNICAL_FIELDS = {"above_ma200", "rsi", "ret_1y"}
 
 
@@ -83,24 +83,54 @@ def _us_snapshot() -> pd.DataFrame:
 
 # ── per-candidate fundamentals ───────────────────────────────────────
 def _kr_fund_row(symbol: str, marketcap: float | None) -> dict[str, float | None]:
-    """PER/PBR/ROE for one KR stock from DART statements + market cap."""
+    """PER/PBR/ROE from DART and dividend yield from the pykrx snapshot."""
     from datetime import datetime
 
     from backend.dart import kr_financials
 
+    fund = _kr_fund_snapshot()
+    div = (
+        _num(fund.at[symbol, "DIV"])
+        if "DIV" in fund.columns and symbol in fund.index
+        else None
+    )
+    out = {"div": div}
     if not marketcap:
-        return {}
+        return out
     for year in (datetime.now().year - 1, datetime.now().year - 2):
         fin = kr_financials(symbol, year)
         ni = fin.get("net_income") if fin else None
         eq = fin.get("equity") if fin else None
         if ni or eq:
-            return {
-                "per": (marketcap / ni) if (ni and ni > 0) else None,
-                "pbr": (marketcap / eq) if (eq and eq > 0) else None,
-                "roe": fin.get("roe"),
-            }
-    return {}
+            out.update(
+                {
+                    "per": (marketcap / ni) if (ni and ni > 0) else None,
+                    "pbr": (marketcap / eq) if (eq and eq > 0) else None,
+                    "roe": fin.get("roe"),
+                }
+            )
+            return out
+    return out
+
+
+def _kr_fund_snapshot() -> pd.DataFrame:
+    """Whole-market pykrx fundamental snapshot, cached once for all candidates."""
+
+    def produce() -> pd.DataFrame:
+        try:
+            from pykrx import stock
+
+            business_day = stock.get_nearest_business_day_in_a_week()
+            frames = [
+                stock.get_market_fundamental_by_ticker(business_day, market=market)
+                for market in ("KOSPI", "KOSDAQ")
+            ]
+            available = [frame for frame in frames if not frame.empty]
+            return pd.concat(available) if available else pd.DataFrame()
+        except Exception:  # noqa: BLE001 - KRX endpoint frequently blocks requests
+            return pd.DataFrame()
+
+    return cache_df("snapshot:KR:fundamental", _SNAP_TTL, produce)
 
 
 def _us_fund_row(symbol: str) -> dict[str, float | None]:
@@ -113,6 +143,7 @@ def _us_fund_row(symbol: str) -> dict[str, float | None]:
             "per": _f(info.get("trailingPE")),
             "pbr": _f(info.get("priceToBook")),
             "roe": roe * 100.0 if roe is not None else None,
+            "div": _div_yield_pct(info),
             "price": _f(info.get("currentPrice")) or _f(info.get("regularMarketPrice")),
             "marketcap": _f(info.get("marketCap")),
         }
@@ -152,10 +183,10 @@ def _num(v: object) -> float | None:
 def _apply(df: pd.DataFrame, filters: list[ScreenFilter]) -> pd.DataFrame:
     """Row-filter that is safe on empty frames (preserves columns)."""
     for f in filters:
-        if f.field not in df.columns or df.empty:
-            if df.empty:
-                break
-            continue
+        if df.empty:
+            break
+        if f.field not in df.columns:
+            return df.iloc[0:0]
         mask = df[f.field].map(lambda v, f=f: _passes(_num(v), f)).astype(bool)
         df = df.loc[mask]
     return df
@@ -187,7 +218,11 @@ def run_screen(spec: ScreenSpec) -> ScreenResult:
         if not matched.empty:
             df = matched
         else:
-            notes.append(f"'{key}' 섹터와 일치하는 종목이 없어 전체에서 검색했습니다.")
+            return ScreenResult(
+                rows=[],
+                scanned=scanned,
+                note=f"'{key}' 섹터와 일치하는 종목이 없습니다.",
+            )
 
     # 1) cheap filters on the whole market (only KR has cheap cols pre-filled)
     if spec.market == "KR":
@@ -197,14 +232,20 @@ def run_screen(spec: ScreenSpec) -> ScreenResult:
     if "marketcap" in df.columns and df["marketcap"].notna().any():
         df = df.sort_values("marketcap", ascending=False)
     pool = df.head(_POOL_CAP).copy()
-    if len(df) > _POOL_CAP and (fund_f or tech_f):
+    if spec.market == "US":
+        scanned = len(pool)
+    if len(df) > _POOL_CAP and spec.market == "US":
+        notes.append(
+            f"미국 시장 데이터 호출 제한으로 {len(df)}종목 중 {_POOL_CAP}종목만 조회했습니다."
+        )
+    elif len(df) > _POOL_CAP and (fund_f or tech_f):
         notes.append(
             f"재무·기술 지표는 시총 상위 {_POOL_CAP}종목 후보군에 대해 계산했습니다."
         )
 
     # 3) per-candidate fundamentals (PER/PBR/ROE), if needed
     if fund_f or spec.market == "US":
-        per, pbr, roe, price_u, mcap_u = [], [], [], [], []
+        per, pbr, roe, div, price_u, mcap_u = [], [], [], [], [], []
         for _, r in pool.iterrows():
             sym = str(r["symbol"])
             if spec.market == "KR":
@@ -214,9 +255,10 @@ def run_screen(spec: ScreenSpec) -> ScreenResult:
             per.append(d.get("per"))
             pbr.append(d.get("pbr"))
             roe.append(d.get("roe"))
+            div.append(d.get("div"))
             price_u.append(d.get("price"))
             mcap_u.append(d.get("marketcap"))
-        pool["per"], pool["pbr"], pool["roe"] = per, pbr, roe
+        pool["per"], pool["pbr"], pool["roe"], pool["div"] = per, pbr, roe, div
         if spec.market == "US":
             pool["price"] = price_u
             pool["marketcap"] = mcap_u
@@ -226,6 +268,10 @@ def run_screen(spec: ScreenSpec) -> ScreenResult:
     if tech_f:
         pool = _add_technical(pool, {f.field for f in tech_f})
         pool = _apply(pool, tech_f)
+
+    # Hard mode is fail-closed: no row can bypass a missing or mis-staged field.
+    if spec.mode == "hard":
+        pool = _apply(pool, spec.filters)
 
     # 5) rank
     if spec.mode == "score" and spec.filters:
@@ -253,6 +299,7 @@ def run_screen(spec: ScreenSpec) -> ScreenResult:
                 per=_num(r.get("per")),
                 pbr=_num(r.get("pbr")),
                 roe=_num(r.get("roe")),
+                div=_num(r.get("div")),
                 score=_num(r.get("__score")),
             )
         )

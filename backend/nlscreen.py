@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import re
 
+from pydantic import ValidationError
+
 from backend.schema import (
     NLScreenResult,
     ScreenFilter,
@@ -18,7 +20,17 @@ from backend.schema import (
 )
 from backend.screener import run_screen
 
-_FIELDS = {"per", "pbr", "roe", "marketcap", "price", "rsi", "ret_1y", "above_ma200"}
+_FIELDS = {
+    "per",
+    "pbr",
+    "roe",
+    "div",
+    "marketcap",
+    "price",
+    "rsi",
+    "ret_1y",
+    "above_ma200",
+}
 _OPS = {"lt", "lte", "gt", "gte", "between", "true"}
 
 # broad sectors the screener understands (KR labels; US mapped to same 한글 in snapshot)
@@ -66,11 +78,12 @@ def _llm_spec(query: str, market: str) -> dict | None:
         '스키마: {"filters":[{"field":F,"op":O,"value":숫자,"value2":숫자(선택)}], '
         '"sector":문자열|null, "mode":"hard"|"score", "limit":정수}\n'
         f"F(field)는 반드시 이 중 하나: {sorted(_FIELDS)}. "
-        "의미: per=PER, pbr=PBR, roe=ROE(%), marketcap=시가총액(원/달러), price=주가, "
+        "의미: per=PER, pbr=PBR, roe=ROE(%), div=배당수익률(%), "
+        "marketcap=시가총액(원/달러), price=주가, "
         "rsi=RSI, ret_1y=1년수익률(%), above_ma200(200일선 위, op는 'true').\n"
         f"O(op)는 이 중 하나: {sorted(_OPS)}.\n"
         "sector는 업종 키워드(예: '반도체','금융','2차전지','바이오') 또는 null. "
-        "규칙: (1) 스키마에 없는 개념(배당·부채 등)은 무시. (2) '저평가'는 per<15 & pbr<1.5 같은 "
+        "규칙: (1) 스키마에 없는 개념(부채 등)은 무시. (2) '저평가'는 per<15 & pbr<1.5 같은 "
         "합리적 기본값으로, '고ROE'는 roe>15 등으로 해석. (3) 숫자가 명시되면 그 값 사용. "
         "(4) 시가총액 단위: 한국이면 원, 미국이면 달러. '대형주'≈시총 상위이므로 필터 대신 정렬로 두고 "
         "굳이 marketcap 필터를 만들지 말 것. (5) JSON만."
@@ -122,14 +135,17 @@ def _sanitize(raw: dict, market: str) -> ScreenSpec:
         op = str(f.get("op", "")).strip()
         if field not in _FIELDS or op not in _OPS:
             continue
-        filters.append(
-            ScreenFilter(
-                field=field,
-                op=op,
-                value=_numf(f.get("value")),
-                value2=_numf(f.get("value2")),
+        try:
+            filters.append(
+                ScreenFilter(
+                    field=field,
+                    op=op,
+                    value=_numf(f.get("value")),
+                    value2=_numf(f.get("value2")),
+                )
             )
-        )
+        except ValidationError:
+            continue
     sector = raw.get("sector")
     sector = str(sector).strip() if sector else None
     mode = raw.get("mode") if raw.get("mode") in ("hard", "score") else "hard"
@@ -148,6 +164,7 @@ def _interpret(spec: ScreenSpec) -> str:
         "per": "PER",
         "pbr": "PBR",
         "roe": "ROE",
+        "div": "배당수익률",
         "marketcap": "시총",
         "price": "주가",
         "rsi": "RSI",
