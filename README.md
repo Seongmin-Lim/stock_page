@@ -55,9 +55,17 @@ python -m backend.server
 |----|------|------|
 | `DART_API_KEY` | **활성** | KR 상세 재무제표(DART) — PER/PBR도 시총·순이익/자본에서 파생 |
 | `GEMINI_API_KEY` | **활성** | (선택) 서술 코멘트 레이어 — 숫자엔 관여 안 함 |
-| `KIWOOM_APP_KEY` / `KIWOOM_APP_SECRET` | 대기(미연동) | 실시간 시세·주문 연동 예정 |
+| `KIS_APP_KEY` / `KIS_APP_SECRET` | 대기/미연동 | 실시간 시세·주문 - KR+US |
 
 키가 없어도 앱은 동작한다(무키 소스로 degrade). `GET /api/health`로 활성 상태 확인.
+
+### KIS 키 발급
+
+1. 한국투자증권 계좌를 개설한다.
+2. [KIS Developers 포털](https://apiportal.koreainvestment.com)에서 앱을 신청한다.
+3. APP KEY와 APP SECRET을 발급받는다(실전투자와 모의투자 키는 별도).
+4. 발급값과 계좌번호를 `.env`의 `KIS_APP_KEY`, `KIS_APP_SECRET`, `KIS_ACCOUNT`에 기입한다.
+5. 앱을 실행하고 `/api/health`에서 `features.kis` 활성 여부를 확인한다.
 
 ## AI 레이어 원칙 (숫자는 코드, 서술만 Gemini)
 
@@ -76,14 +84,14 @@ DART 공시 요약, 관심종목 일일 브리핑, (추천/사이클의) 서술 
 - 매매: `POST /api/position` · `/api/journal` (GET/POST/DELETE)
 - 포트폴리오: `POST /api/portfolio` · `POST /api/backtest`(체결 내역 포함)
 - 관심·알림: `/api/watchlist` · `/api/compare` · `/api/alerts`
-- 상태: **`/api/health`**(dart/gemini/kiwoom 활성 여부)
+- 상태: **`/api/health`**(dart/gemini/kis 활성 여부) · **`/api/kis/status`**(KIS 연결 상태)
 
 ## 한계
 
 - 데이터는 **지연/EOD**, 스크래핑 기반이라 간헐 실패 가능(캐시로 완화).
 - **전 시장 턴어라운드 스캔은 최초 1회 수 분** 소요(수백 종목 2단계 분석) — 이후 12시간 캐시.
 - pykrx 기초지표(PER/PBR)는 자주 차단됨 → KR은 **DART 재무 + 시총에서 PER/PBR 파생**.
-- 실시간 스트리밍·옵션체인·키움 주문 연동은 후속.
+- 실시간 스트리밍·옵션체인·KIS 주문 연동은 후속.
 
 ## 구조
 
@@ -92,7 +100,7 @@ backend/  server(FastAPI·라우팅·헬스·포트자동전환·캐시워밍업
           sources · cache · store · universe(검색·섹터) · indicators · fundamentals(DCF)
           screener · nlscreen · recommend · scanner(전시장 스캔) · regime(시황)
           cycles · flows · portfolio(비교·백테스트) · trade(포지션) · journal · alerts
-          analysis · chartread · news · disclosure · briefing · dart · llm · config · kiwoom
+          analysis · chartread · news · disclosure · briefing · dart · llm · config · kis
 frontend/ index.html · style.css(Apple) · app.js · vendor/lightweight-charts
 data/     캐시(parquet) + watchlist/portfolio/journal/alerts json (git 제외)
 tests/    test_indicators · test_valuation · test_trade · test_journal · test_reversal · test_nlscreen

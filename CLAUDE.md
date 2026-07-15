@@ -24,7 +24,7 @@ backend/  server(라우팅·_guard·헬스·포트자동전환·캐시워밍업)
           cache · store(상태 json) · universe(검색·섹터) · indicators · fundamentals(DCF)
           screener · nlscreen · recommend · scanner(전시장 턴어라운드) · regime(지수 시황)
           cycles · flows · portfolio(비교·백테스트) · trade(포지션) · journal · alerts
-          analysis · chartread · news · disclosure · briefing · dart · llm · config · kiwoom
+          analysis · chartread · news · disclosure · briefing · dart · llm · config · kis
 frontend/ index.html · style.css(Apple) · app.js · vendor/lightweight-charts
 data/     캐시(parquet) + watchlist/portfolio/journal/alerts json (git 제외)
 tests/    test_indicators · test_valuation · test_trade · test_journal · test_reversal · test_nlscreen
@@ -37,13 +37,13 @@ tests/    test_indicators · test_valuation · test_trade · test_journal · tes
 - `screener`: `_kr_fund_row` · `_us_fund_row` · `_us_snapshot`.
 - `portfolio.backtest`: 벡터화 MA/RSI/buy-hold, `pos_lag`(1바 시프트) → 체결 내역 파생.
 - `universe.sector_of` / `US_SECTOR_KO`(단일 US 섹터맵) / `_kr_sectors`.
-- `config.has_dart/has_gemini/has_kiwoom`.
+- `config.has_dart/has_gemini/has_kis`.
 
 ## 실행
 - 사용자: `start_stock.bat` 더블클릭 → (최초) 자동 설치 → 서버 → 브라우저 자동 오픈.
   8000 사용 중이면 `_free_port`가 8001~8010 중 빈 포트로 전환.
 - 개발: `./.venv/Scripts/python.exe -m backend.server` (또는 uvicorn 직접 기동).
-- 헬스: `GET /api/health` → `{ok, features:{dart,gemini,kiwoom}}`.
+- 헬스: `GET /api/health` → `{ok, features:{dart,gemini,kis}}`.
 
 ## 검증
 - `python -m py_compile backend/*.py` — 문법 확인.

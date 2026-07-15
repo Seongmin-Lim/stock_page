@@ -26,7 +26,7 @@ from backend import chartread as chartread_mod
 from backend import cycles as cycles_mod
 from backend import disclosure as disclosure_mod
 from backend import flows as flows_mod
-from backend import kiwoom as kiwoom_mod
+from backend import kis as kis_mod
 from backend import news as news_mod
 from backend import nlscreen as nlscreen_mod
 from backend import fundamentals as fund_mod
@@ -37,7 +37,7 @@ from backend import regime as regime_mod
 from backend import scanner as scanner_mod
 from backend import screener as screen_mod
 from backend import sources, trade, universe
-from backend.config import has_dart, has_gemini, has_kiwoom
+from backend.config import has_dart, has_gemini, has_kis
 from backend.indicators import compute_indicators
 from backend.schema import (
     AlertCheckResult,
@@ -269,10 +269,10 @@ def api_flows(symbol: str) -> FlowResult:
     return _guard(lambda: flows_mod.get_flows(symbol))
 
 
-# ── kiwoom connection status ─────────────────────────────────────────
-@app.get("/api/kiwoom/status")
-def api_kiwoom_status() -> dict:
-    return kiwoom_mod.status()
+# ── KIS connection status ────────────────────────────────────────────
+@app.get("/api/kis/status")
+def api_kis_status() -> dict[str, object]:
+    return kis_mod.status()
 
 
 # ── position sizing ──────────────────────────────────────────────────
@@ -299,13 +299,13 @@ def api_journal_del(trade_id: str) -> JournalResult:
 
 # ── health / feature flags ───────────────────────────────────────────
 @app.get("/api/health")
-def api_health() -> dict:
+def api_health() -> dict[str, object]:
     return {
         "ok": True,
         "features": {
             "dart": has_dart(),
             "gemini": has_gemini(),
-            "kiwoom": has_kiwoom(),
+            "kis": has_kis(),
         },
     }
 

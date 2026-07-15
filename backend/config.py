@@ -18,11 +18,11 @@ except Exception:  # noqa: BLE001 - dotenv optional; env vars may be set externa
 
 DART_API_KEY: str | None = os.environ.get("DART_API_KEY") or None
 
-# 키움증권 REST OpenAPI credentials (optional)
-KIWOOM_APP_KEY: str | None = os.environ.get("KIWOOM_APP_KEY") or None
-KIWOOM_APP_SECRET: str | None = os.environ.get("KIWOOM_APP_SECRET") or None
-KIWOOM_ACCOUNT: str | None = os.environ.get("KIWOOM_ACCOUNT") or None
-KIWOOM_MOCK: bool = os.environ.get("KIWOOM_MOCK", "false").strip().lower() in (
+# KIS Developers OpenAPI credentials (optional)
+KIS_APP_KEY: str | None = os.environ.get("KIS_APP_KEY") or None
+KIS_APP_SECRET: str | None = os.environ.get("KIS_APP_SECRET") or None
+KIS_ACCOUNT: str | None = os.environ.get("KIS_ACCOUNT") or None
+KIS_MOCK: bool = os.environ.get("KIS_MOCK", "false").strip().lower() in (
     "1",
     "true",
     "yes",
@@ -37,8 +37,8 @@ def has_dart() -> bool:
     return bool(DART_API_KEY)
 
 
-def has_kiwoom() -> bool:
-    return bool(KIWOOM_APP_KEY and KIWOOM_APP_SECRET)
+def has_kis() -> bool:
+    return bool(KIS_APP_KEY and KIS_APP_SECRET)
 
 
 def has_gemini() -> bool:
