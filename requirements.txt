@@ -10,6 +10,7 @@ yfinance>=0.2.40
 finance-datareader>=0.9.90
 pykrx>=1.0.45
 python-dotenv>=1.0
+requests>=2.31
 # OpenDartReader 0.3.x requires Python>=3.13; 0.2.x works on 3.10-3.12
 OpenDartReader>=0.2.1
 google-genai>=0.3
