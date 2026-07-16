@@ -23,7 +23,12 @@ async function api(path, opts) {
   if (!res.ok) {
     let msg = res.statusText;
     try {
-      msg = (await res.json()).detail || msg;
+      const detail = (await res.json()).detail;
+      msg = Array.isArray(detail)
+        ? detail
+            .map((item) => `${(item.loc || []).slice(1).join(".") || "요청"}: ${item.msg}`)
+            .join(" / ")
+        : detail || msg;
     } catch (e) {
       /* ignore */
     }
@@ -186,6 +191,7 @@ function activateTab(name) {
   if (name === "trade") {
     if (state.symbol) $("#ps-symbol").value = state.symbol;
     renderJournal();
+    if (!autotradeLoaded) renderAutotrade(true);
   }
 }
 const needSymbol = () => {
@@ -1737,6 +1743,210 @@ async function renderJournal() {
   }
 }
 
+// ── trade: paper autotrade ──────────────────────────────────────────
+let autotradeLoaded = false;
+
+const universeFrom = (id) =>
+  $(id)
+    .value.split(",")
+    .map((symbol) => symbol.trim())
+    .filter(Boolean);
+
+function statusBadge(label, value) {
+  return `<span class="pill-tag">${label} <b class="num ${value ? "up" : "down"}">${value ? "예" : "아니오"}</b></span>`;
+}
+
+function renderAutotradeLogs(logs) {
+  const host = $("#autotrade-logs");
+  if (!logs.length) {
+    host.innerHTML = `<div class="empty">최근 의사결정 로그가 없습니다.</div>`;
+    return;
+  }
+  host.innerHTML = `<div class="table-wrap"><table><thead><tr>
+    <th>시각</th><th>종목</th><th>방향</th><th>수량</th><th>규칙</th><th>사유</th>
+    </tr></thead><tbody>${logs
+      .slice(-20)
+      .map(
+        (row) => `<tr><td>${row.ts || "—"}</td><td>${row.symbol || "—"}</td>
+          <td>${row.side === "buy" ? "매수" : "매도"}</td><td>${num(row.qty, 0)}</td>
+          <td>${row.rule || "—"}</td><td style="text-align:left">${row.reason || "—"}</td></tr>`,
+      )
+      .join("")}</tbody></table></div>`;
+}
+
+async function renderAutotrade(fillForm = false) {
+  try {
+    const [kis, report] = await Promise.all([
+      apiGet("/api/kis/status"),
+      apiGet("/api/autotrade/status"),
+    ]);
+    autotradeLoaded = true;
+    $("#autotrade-kis").innerHTML = `<div class="row">
+      ${statusBadge("설정", kis.configured)} ${statusBadge("연결", kis.connected)}
+      ${statusBadge("모의투자", kis.mock)} <span>${kis.message}</span></div>`;
+    const engine = report.state;
+    $("#autotrade-engine").innerHTML = `<div class="row" style="margin-top:12px">
+      ${statusBadge("실행", engine.enabled)} ${statusBadge("중단 플래그", engine.halt)}
+      <span class="note" style="margin:0">최근 실행: ${engine.last_run || "—"}</span>
+      <button class="btn" id="autotrade-start" ${engine.enabled ? "disabled" : ""}>시작</button>
+      <button class="btn sec" id="autotrade-stop" ${engine.enabled ? "" : "disabled"}>중지</button>
+    </div>`;
+    $("#autotrade-message").innerHTML = engine.message
+      ? `<div class="note">${engine.message}</div>`
+      : "";
+    if (fillForm) {
+      const config = report.config;
+      $("#autotrade-universe").value = config.universe.join(", ");
+      $("#autotrade-capital").value = config.capital;
+      $("#autotrade-risk-pct").value = config.risk_pct;
+      $("#autotrade-interval-sec").value = config.interval_sec;
+      $("#autotrade-max-positions").value = config.max_positions;
+      $("#autotrade-daily-loss").value = config.daily_loss_limit_pct;
+      if (!$("#replay-universe").value.trim()) {
+        $("#replay-universe").value = config.universe.join(", ");
+      }
+    }
+    renderAutotradeLogs(report.logs);
+    $("#autotrade-start").addEventListener("click", () => changeAutotrade("start"));
+    $("#autotrade-stop").addEventListener("click", () => changeAutotrade("stop"));
+  } catch (e) {
+    $("#autotrade-message").innerHTML = `<div class="empty">자동매매 상태 조회 실패: ${e.message}</div>`;
+  }
+}
+
+async function changeAutotrade(action) {
+  try {
+    const result = await apiPost(`/api/autotrade/${action}`, {});
+    const message = $("#autotrade-message");
+    message.className = "note";
+    message.textContent = result.message;
+    toast(result.message, result.ok ? "good" : "bad");
+    await renderAutotrade(false);
+    if (!result.ok) {
+      message.className = "note";
+      message.textContent = result.message;
+    }
+  } catch (e) {
+    err(e);
+  }
+}
+
+$("#autotrade-save").addEventListener("click", async () => {
+  const host = $("#autotrade-config-error");
+  host.innerHTML = "";
+  try {
+    await apiPost("/api/autotrade/config", {
+      universe: universeFrom("#autotrade-universe"),
+      capital: +$("#autotrade-capital").value,
+      risk_pct: +$("#autotrade-risk-pct").value,
+      interval_sec: +$("#autotrade-interval-sec").value,
+      max_positions: +$("#autotrade-max-positions").value,
+      daily_loss_limit_pct: +$("#autotrade-daily-loss").value,
+    });
+    toast("자동매매 설정을 저장했습니다.", "good");
+    await renderAutotrade(true);
+  } catch (e) {
+    host.innerHTML = `<div class="note" style="color:var(--down)">설정 검증 실패: ${e.message}</div>`;
+  }
+});
+
+// ── trade: historical replay ────────────────────────────────────────
+let replayChart = null;
+
+function replayRuleTable(title, rows) {
+  return `<div><h2 style="margin-top:18px">${title}</h2><div class="table-wrap"><table><thead><tr>
+    <th>규칙</th><th>거래</th><th>승률</th><th>평균 R</th><th>기여도</th>
+    </tr></thead><tbody>${rows
+      .map(
+        (row) => `<tr><td>${row.rule}</td><td>${num(row.trade_count, 0)}</td>
+          <td>${row.win_rate == null ? "—" : num(row.win_rate) + "%"}</td>
+          <td class="num ${cls(row.avg_r)}">${row.avg_r == null ? "—" : num(row.avg_r) + "R"}</td>
+          <td class="num ${cls(row.total_return_contribution)}">${sign(row.total_return_contribution)}${num(row.total_return_contribution)}%</td></tr>`,
+      )
+      .join("")}</tbody></table></div></div>`;
+}
+
+function drawReplayEquity(points) {
+  const el = $("#replay-equity-chart");
+  if (replayChart) replayChart.remove();
+  replayChart = null;
+  if (!points.length) {
+    el.style.display = "none";
+    return;
+  }
+  el.style.display = "block";
+  replayChart = LWC.createChart(el, { ...mainOpts(el), height: el.clientHeight });
+  const series = replayChart.addLineSeries({
+    color: "#0071e3",
+    lineWidth: 2,
+    priceLineVisible: false,
+  });
+  series.setData(points.map((point) => ({ time: point.time, value: point.value })));
+  replayChart.timeScale().fitContent();
+  observe(el, replayChart);
+}
+
+function renderReplay(report) {
+  const summary = report.summary;
+  $("#replay-result").innerHTML = `<div class="jstats">
+    <div><div class="k">총수익률</div><div class="v num ${cls(summary.total_return)}">${sign(summary.total_return)}${num(summary.total_return)}%</div></div>
+    <div><div class="k">CAGR</div><div class="v num ${cls(summary.cagr)}">${summary.cagr == null ? "—" : sign(summary.cagr) + num(summary.cagr) + "%"}</div></div>
+    <div><div class="k">MDD</div><div class="v num ${cls(summary.mdd)}">${summary.mdd == null ? "—" : num(summary.mdd) + "%"}</div></div>
+    <div><div class="k">Sharpe</div><div class="v num ${cls(summary.sharpe)}">${num(summary.sharpe)}</div></div>
+    <div><div class="k">거래 수</div><div class="v">${num(summary.trade_count, 0)}</div></div>
+    <div><div class="k">승률</div><div class="v">${summary.win_rate == null ? "—" : num(summary.win_rate) + "%"}</div></div>
+  </div>`;
+  drawReplayEquity(report.equity_curve);
+  const attribution = report.attribution;
+  $("#replay-attribution").innerHTML = `<div class="jstats" style="margin-top:16px">
+      <div><div class="k">시장 국면 차단</div><div class="v">${num(attribution.regime_gate_blocks, 0)}</div></div>
+      <div><div class="k">리스크 한도 차단</div><div class="v">${num(attribution.risk_limit_blocks, 0)}</div></div>
+    </div><div class="grid2">
+      ${replayRuleTable("진입 규칙 기여", attribution.entry_rules)}
+      ${replayRuleTable("청산 규칙 기여", attribution.exit_rules)}
+    </div>`;
+  $("#replay-journal").innerHTML = `<h2 style="margin-top:20px">재생 매매일지</h2>
+    ${
+      report.journal.length
+        ? `<div class="table-wrap"><table><thead><tr><th>종목</th><th>진입일</th><th>진입가</th><th>청산일</th><th>청산가</th><th>수량</th><th>진입 규칙</th><th>청산 규칙</th><th>R</th><th>손익</th></tr></thead><tbody>${report.journal
+            .map(
+              (trade) => `<tr><td>${trade.symbol}</td><td>${trade.entry_date}</td><td>${num(trade.entry_price)}</td>
+                <td>${trade.exit_date || "—"}</td><td>${num(trade.exit_price)}</td><td>${num(trade.qty, 0)}</td>
+                <td>${trade.entry_rule}</td><td>${trade.exit_rule || "—"}</td>
+                <td class="num ${cls(trade.r_multiple)}">${trade.r_multiple == null ? "—" : num(trade.r_multiple) + "R"}</td>
+                <td class="num ${cls(trade.pnl)}">${num(trade.pnl)}</td></tr>`,
+            )
+            .join("")}</tbody></table></div>`
+        : `<div class="empty">재생 구간에 체결된 거래가 없습니다.</div>`
+    }`;
+  $("#replay-caveats").innerHTML = report.caveats.length
+    ? `<div class="note"><b>검증 유의사항</b><ul>${report.caveats.map((item) => `<li>${item}</li>`).join("")}</ul></div>`
+    : "";
+}
+
+$("#replay-run").addEventListener("click", async () => {
+  const button = $("#replay-run");
+  $("#replay-result").innerHTML = `<div class="loading"><span class="spinner"></span> 과거 데이터를 재생하는 중… 최대 1분 정도 걸릴 수 있습니다.</div>`;
+  ["#replay-attribution", "#replay-journal", "#replay-caveats"].forEach(
+    (id) => ($(id).innerHTML = ""),
+  );
+  drawReplayEquity([]);
+  button.disabled = true;
+  try {
+    const report = await apiPost("/api/replay", {
+      universe: universeFrom("#replay-universe"),
+      start: $("#replay-start").value,
+      end: $("#replay-end").value,
+      cost_bps: +$("#replay-cost-bps").value,
+    });
+    renderReplay(report);
+  } catch (e) {
+    $("#replay-result").innerHTML = `<div class="empty">과거 재생 실패: ${e.message}</div>`;
+  } finally {
+    button.disabled = false;
+  }
+});
+
 // ── overview: KR investor flows card ──────────────────────────────────
 async function renderFlows() {
   if (!state.symbol || state.market !== "KR") return;
@@ -1852,6 +2062,12 @@ addHoldingRow();
 window.activateTab = activateTab; // for inline onclick
 
 document.addEventListener("DOMContentLoaded", () => {
+  const today = new Date();
+  $("#replay-end").value = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, "0"),
+    String(today.getDate()).padStart(2, "0"),
+  ].join("-");
   loadRegime();
   autoCheckAlerts(); // non-blocking, runs after regime kicks off
   checkHealth();
