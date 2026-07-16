@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend import alerts as alerts_mod
 from backend import analysis as analysis_mod
+from backend import autotrade as autotrade_mod
 from backend import briefing as briefing_mod
 from backend import chartread as chartread_mod
 from backend import cycles as cycles_mod
@@ -43,6 +44,8 @@ from backend.indicators import compute_indicators
 from backend.schema import (
     AlertCheckResult,
     AlertRule,
+    AutotradeConfig,
+    AutotradeConfigUpdate,
     BacktestRequest,
     BacktestResult,
     CompareResult,
@@ -311,6 +314,30 @@ def api_kis_psbl(symbol: str, price: float | None = None) -> KisBuyingPower:
     return _guard(lambda: KisBuyingPower(**kis_trade_mod.psbl(symbol, price)))
 
 
+# ── paper-trading automation ─────────────────────────────────────────
+@app.get("/api/autotrade/status")
+def api_autotrade_status() -> dict[str, object]:
+    return autotrade_mod.status()
+
+
+@app.post("/api/autotrade/config", response_model=AutotradeConfig)
+def api_autotrade_config(req: AutotradeConfigUpdate) -> AutotradeConfig:
+    try:
+        return autotrade_mod.update_config(req)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/autotrade/start")
+async def api_autotrade_start() -> dict[str, object]:
+    return await autotrade_mod.start()
+
+
+@app.post("/api/autotrade/stop")
+async def api_autotrade_stop() -> dict[str, object]:
+    return await autotrade_mod.stop()
+
+
 # ── position sizing ──────────────────────────────────────────────────
 @app.post("/api/position", response_model=PositionResult)
 def api_position(req: PositionRequest) -> PositionResult:
@@ -363,8 +390,9 @@ def _warmup() -> None:
 
 
 @app.on_event("startup")
-def _on_startup() -> None:
+async def _on_startup() -> None:
     threading.Thread(target=_warmup, daemon=True).start()
+    await autotrade_mod.start_on_startup()
 
 
 # ── frontend ─────────────────────────────────────────────────────────

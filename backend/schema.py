@@ -464,6 +464,47 @@ class PositionResult(BaseModel):
     note: str | None = None
 
 
+# ── paper-trading automation ─────────────────────────────────────────
+class AutotradeConfig(BaseModel):
+    universe: list[str] = Field(default_factory=list, max_length=100)
+    capital: float = Field(default=10_000_000.0, gt=0, le=10_000_000_000.0)
+    risk_pct: float = Field(default=1.0, ge=0.1, le=5.0)
+    interval_sec: int = Field(default=300, ge=60, le=3600)
+    ma_fast: int = Field(default=20, ge=2, le=200)
+    ma_slow: int = Field(default=60, ge=3, le=300)
+    rsi_entry_max: float = Field(default=70.0, ge=1.0, le=99.0)
+    rsi_exit: float = Field(default=80.0, ge=1.0, le=100.0)
+    atr_mult: float = Field(default=2.0, gt=0.0, le=10.0)
+    max_positions: int = Field(default=5, ge=1, le=20)
+    daily_loss_limit_pct: float = Field(default=3.0, ge=0.1, le=20.0)
+
+    @model_validator(mode="after")
+    def validate_strategy(self) -> AutotradeConfig:
+        if self.ma_fast >= self.ma_slow:
+            raise ValueError("단기 이동평균 기간은 장기 이동평균 기간보다 짧아야 합니다.")
+        if self.rsi_entry_max >= self.rsi_exit:
+            raise ValueError("진입 RSI 기준은 청산 RSI 기준보다 낮아야 합니다.")
+        if len(set(self.universe)) != len(self.universe):
+            raise ValueError("자동매매 종목 목록에 중복 종목이 있습니다.")
+        if any(len(symbol) != 6 or not symbol.isdigit() for symbol in self.universe):
+            raise ValueError("자동매매 종목은 6자리 국내 종목코드여야 합니다.")
+        return self
+
+
+class AutotradeConfigUpdate(BaseModel):
+    universe: list[str] | None = Field(default=None, max_length=100)
+    capital: float | None = Field(default=None, gt=0, le=10_000_000_000.0)
+    risk_pct: float | None = Field(default=None, ge=0.1, le=5.0)
+    interval_sec: int | None = Field(default=None, ge=60, le=3600)
+    ma_fast: int | None = Field(default=None, ge=2, le=200)
+    ma_slow: int | None = Field(default=None, ge=3, le=300)
+    rsi_entry_max: float | None = Field(default=None, ge=1.0, le=99.0)
+    rsi_exit: float | None = Field(default=None, ge=1.0, le=100.0)
+    atr_mult: float | None = Field(default=None, gt=0.0, le=10.0)
+    max_positions: int | None = Field(default=None, ge=1, le=20)
+    daily_loss_limit_pct: float | None = Field(default=None, ge=0.1, le=20.0)
+
+
 # ── trade journal ────────────────────────────────────────────────────
 class TradeEntry(BaseModel):
     id: str = ""
