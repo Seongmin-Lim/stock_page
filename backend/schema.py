@@ -505,6 +505,117 @@ class AutotradeConfigUpdate(BaseModel):
     daily_loss_limit_pct: float | None = Field(default=None, ge=0.1, le=20.0)
 
 
+# ── historical auto-trade replay ────────────────────────────────────
+ReplayInputValue = float | int | bool | str
+
+
+class ReplayRequest(BaseModel):
+    universe: list[str] = Field(min_length=1, max_length=20)
+    start: str
+    end: str
+    config: AutotradeConfigUpdate | None = None
+    cost_bps: float = Field(default=15.0, ge=0.0, le=1000.0)
+
+    @model_validator(mode="after")
+    def validate_replay(self) -> ReplayRequest:
+        from datetime import date
+
+        if len(set(self.universe)) != len(self.universe):
+            raise ValueError("리플레이 종목 목록에 중복 종목이 있습니다.")
+        if any(len(symbol) != 6 or not symbol.isdigit() for symbol in self.universe):
+            raise ValueError("리플레이 종목은 6자리 국내 종목코드여야 합니다.")
+        try:
+            start_date = date.fromisoformat(self.start)
+            end_date = date.fromisoformat(self.end)
+        except ValueError as exc:
+            raise ValueError("시작일과 종료일은 ISO 날짜(YYYY-MM-DD)여야 합니다.") from exc
+        if start_date >= end_date:
+            raise ValueError("시작일은 종료일보다 빨라야 합니다.")
+        if self.config is not None and self.config.universe is not None:
+            raise ValueError("config.universe 대신 요청의 universe를 사용하세요.")
+        overrides = (
+            self.config.model_dump(exclude_none=True)
+            if self.config is not None
+            else {}
+        )
+        AutotradeConfig(universe=self.universe, **overrides)
+        return self
+
+
+class ReplayJournalTrade(BaseModel):
+    ts: str
+    symbol: str
+    side: Literal["buy"] = "buy"
+    qty: int
+    entry_date: str
+    entry_price: float
+    exit_date: str | None = None
+    exit_price: float | None = None
+    entry_rule: str
+    exit_rule: str | None = None
+    r_multiple: float | None = None
+    pnl: float | None = None
+    return_contribution: float
+    regime_above_ma200: bool
+    inputs: dict[str, ReplayInputValue] = Field(default_factory=dict)
+    exit_inputs: dict[str, ReplayInputValue] = Field(default_factory=dict)
+
+
+class ReplayRuleStats(BaseModel):
+    rule: str
+    trade_count: int
+    win_rate: float | None = None
+    avg_r: float | None = None
+    total_return_contribution: float
+
+
+class ReplayRegimeStats(BaseModel):
+    regime: Literal["above_ma200", "below_ma200"]
+    entry_count: int
+    trade_count: int
+    win_rate: float | None = None
+    avg_r: float | None = None
+    total_return_contribution: float
+
+
+class ReplayAttribution(BaseModel):
+    entry_rules: list[ReplayRuleStats] = Field(default_factory=list)
+    exit_rules: list[ReplayRuleStats] = Field(default_factory=list)
+    regimes: list[ReplayRegimeStats] = Field(default_factory=list)
+    regime_gate_blocks: int = 0
+    risk_limit_blocks: int = 0
+
+
+class ReplaySummary(BaseModel):
+    initial_capital: float
+    final_equity: float
+    total_return: float
+    cagr: float | None = None
+    mdd: float | None = None
+    sharpe: float | None = None
+    trade_count: int
+    closed_trade_count: int
+    win_rate: float | None = None
+    max_consecutive_losses: int
+
+
+class ReplayPeriod(BaseModel):
+    start: str
+    end: str
+
+
+class ReplayReport(BaseModel):
+    period: ReplayPeriod
+    universe: list[str]
+    config: AutotradeConfig
+    cost_bps: float
+    journal: list[ReplayJournalTrade] = Field(default_factory=list)
+    attribution: ReplayAttribution
+    equity_curve: list[LinePoint] = Field(default_factory=list)
+    summary: ReplaySummary
+    caveats: list[str] = Field(default_factory=list)
+
+
 # ── trade journal ────────────────────────────────────────────────────
 class TradeEntry(BaseModel):
     id: str = ""

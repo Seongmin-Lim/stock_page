@@ -35,6 +35,7 @@ from backend import fundamentals as fund_mod
 from backend import journal as journal_mod
 from backend import portfolio as port_mod
 from backend import recommend as reco_mod
+from backend import replay as replay_mod
 from backend import regime as regime_mod
 from backend import scanner as scanner_mod
 from backend import screener as screen_mod
@@ -75,6 +76,8 @@ from backend.schema import (
     PositionResult,
     Quote,
     RecoResult,
+    ReplayReport,
+    ReplayRequest,
     RegimeResult,
     ScreenResult,
     TradeEntry,
@@ -225,6 +228,20 @@ def api_portfolio(req: PortfolioRequest) -> PortfolioAnalysis:
 @app.post("/api/backtest", response_model=BacktestResult)
 def api_backtest(req: BacktestRequest) -> BacktestResult:
     return _guard(lambda: port_mod.backtest(req))
+
+
+@app.post("/api/replay", response_model=ReplayReport)
+def api_replay(req: ReplayRequest) -> ReplayReport:
+    """동기 실행: 캐시된 일봉 기준 종목·연도당 수 초가 예상됩니다."""
+    overrides = (
+        req.config.model_dump(exclude_none=True) if req.config is not None else {}
+    )
+    strategy_config = AutotradeConfig(universe=req.universe, **overrides)
+    return _guard(
+        lambda: replay_mod.replay(
+            req.universe, req.start, req.end, strategy_config, req.cost_bps
+        )
+    )
 
 
 # ── alerts ───────────────────────────────────────────────────────────
