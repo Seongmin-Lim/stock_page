@@ -611,3 +611,54 @@ class StockAnalysis(BaseModel):
     )
     generated: str = ""
     note: str = "점수·팩터는 규칙 기반(무료·결정적) 계산입니다. 투자 권유가 아니며 참고용입니다."
+
+
+# KIS domestic trading
+class KisPosition(BaseModel):
+    symbol: str
+    name: str = ""
+    qty: int = 0
+    avg_price: float = 0.0
+    current_price: float = 0.0
+    eval_amount: float = 0.0
+    pnl: float = 0.0
+    pnl_pct: float = 0.0
+
+
+class KisBalance(BaseModel):
+    positions: list[KisPosition] = Field(default_factory=list)
+    cash: float = 0.0
+    total_eval: float = 0.0
+    total_purchase: float = 0.0
+    pnl: float = 0.0
+    message: str = ""
+
+
+class KisOrderResult(BaseModel):
+    ok: bool
+    order_no: str | None = None
+    org_no: str | None = None
+    message: str
+
+
+class KisOrderRequest(BaseModel):
+    symbol: str = Field(pattern=r"^\d{6}$")
+    qty: int = Field(ge=1)
+    side: Literal["buy", "sell"]
+    order_type: Literal["limit", "market"]
+    price: float | None = Field(default=None, gt=0)
+
+
+class KisCancelRequest(BaseModel):
+    order_no: str = Field(min_length=1)
+    org_no: str = ""
+    qty: int = Field(default=0, ge=0)
+    price: float | None = Field(default=None, gt=0)
+
+
+class KisBuyingPower(BaseModel):
+    symbol: str
+    orderable_cash: float = 0.0
+    max_buy_qty: int = 0
+    max_buy_amount: float = 0.0
+    message: str = ""

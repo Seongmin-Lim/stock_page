@@ -27,6 +27,9 @@ KIS_MOCK: bool = os.environ.get("KIS_MOCK", "false").strip().lower() in (
     "true",
     "yes",
 )
+KIS_ALLOW_REAL_ORDERS: bool = os.environ.get(
+    "KIS_ALLOW_REAL_ORDERS", "false"
+).strip().lower() in ("1", "true", "yes")
 
 # Google Gemini (optional LLM narrative layer)
 GEMINI_API_KEY: str | None = os.environ.get("GEMINI_API_KEY") or None

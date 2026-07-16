@@ -27,6 +27,7 @@ from backend import cycles as cycles_mod
 from backend import disclosure as disclosure_mod
 from backend import flows as flows_mod
 from backend import kis as kis_mod
+from backend import kis_trade as kis_trade_mod
 from backend import news as news_mod
 from backend import nlscreen as nlscreen_mod
 from backend import fundamentals as fund_mod
@@ -49,6 +50,11 @@ from backend.schema import (
     DCFResult,
     Fundamentals,
     IndicatorsResponse,
+    KisBalance,
+    KisBuyingPower,
+    KisCancelRequest,
+    KisOrderRequest,
+    KisOrderResult,
     OHLCVResponse,
     PortfolioAnalysis,
     PortfolioRequest,
@@ -273,6 +279,36 @@ def api_flows(symbol: str) -> FlowResult:
 @app.get("/api/kis/status")
 def api_kis_status() -> dict[str, object]:
     return kis_mod.status()
+
+
+@app.get("/api/kis/balance", response_model=KisBalance)
+def api_kis_balance() -> KisBalance:
+    return _guard(lambda: KisBalance(**kis_trade_mod.account()))
+
+
+@app.post("/api/kis/order", response_model=KisOrderResult)
+def api_kis_order(req: KisOrderRequest) -> KisOrderResult:
+    result = _guard(
+        lambda: kis_trade_mod.order_cash(
+            req.symbol, req.qty, req.price, req.order_type, req.side
+        )
+    )
+    return KisOrderResult(**result)
+
+
+@app.post("/api/kis/order/cancel", response_model=KisOrderResult)
+def api_kis_order_cancel(req: KisCancelRequest) -> KisOrderResult:
+    result = _guard(
+        lambda: kis_trade_mod.modify_cancel(
+            req.order_no, req.org_no, req.qty, req.price, cancel=True
+        )
+    )
+    return KisOrderResult(**result)
+
+
+@app.get("/api/kis/psbl", response_model=KisBuyingPower)
+def api_kis_psbl(symbol: str, price: float | None = None) -> KisBuyingPower:
+    return _guard(lambda: KisBuyingPower(**kis_trade_mod.psbl(symbol, price)))
 
 
 # ── position sizing ──────────────────────────────────────────────────
