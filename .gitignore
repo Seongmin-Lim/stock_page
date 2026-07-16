@@ -6,6 +6,7 @@ __pycache__/
 .ruff_cache/
 docs_cache/
 legacy_streamlit/reports/
+.projectdb/
 
 # secrets — never commit
 .env
